@@ -1,6 +1,6 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
-import { ClerkProvider } from '@clerk/nextjs';
+import { ClerkProvider, SignInButton, SignUpButton, UserButton, Show } from '@clerk/nextjs';
 
 export const viewport: Viewport = {
   themeColor: '#0F172A',
@@ -29,10 +29,8 @@ export const metadata: Metadata = {
   },
 };
 
-const clerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const inner = (
+  return (
     <html lang="en">
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -40,11 +38,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-title" content="Peregrine" />
         <link rel="icon" href="/icons/icon-192.png" />
       </head>
-      <body className="bg-peregrine-dark text-white">{children}</body>
+      <body className="bg-peregrine-dark text-white">
+        <ClerkProvider>
+          <header className="fixed top-0 right-0 z-50 flex items-center gap-2 p-3">
+            <Show when="signed-out">
+              <SignInButton mode="modal" />
+              <SignUpButton mode="modal" />
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
+          </header>
+          {children}
+        </ClerkProvider>
+      </body>
     </html>
   );
-
-  if (!clerkKey) return inner;
-
-  return <ClerkProvider publishableKey={clerkKey}>{inner}</ClerkProvider>;
 }

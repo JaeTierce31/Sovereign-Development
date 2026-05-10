@@ -1,7 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 
 export async function requireAuth() {
-  const { userId } = auth();
+  const { userId } = await auth();
   if (!userId) throw new Error('Unauthorized');
   return userId;
 }
