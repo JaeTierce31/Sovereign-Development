@@ -2,7 +2,7 @@
   "name": "Peregrine",
   "short_name": "Peregrine",
   "description": "Code at the speed of flight.",
-  "start_url": "/editor/demo",
+  "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#0F172A",

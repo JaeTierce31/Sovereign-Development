@@ -15,11 +15,13 @@ function ProjectCard({
   onOpen,
   onRename,
   onDelete,
+  onDuplicate,
 }: {
   project: Project;
   onOpen: () => void;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
+  onDuplicate: () => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.name);
@@ -84,6 +86,13 @@ function ProjectCard({
             ✎
           </button>
           <button
+            onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+            className="p-1 text-gray-500 hover:text-gray-200 rounded transition-colors text-xs"
+            title="Duplicate project"
+          >
+            ⧉
+          </button>
+          <button
             onClick={handleDelete}
             className="p-1 text-gray-500 hover:text-red-400 rounded transition-colors"
             title="Delete project"
@@ -143,6 +152,14 @@ export default function Dashboard() {
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     if (res.ok || res.status === 204) {
       setProjects((prev) => prev.filter((p) => p.id !== id));
+    }
+  }, []);
+
+  const handleDuplicate = useCallback(async (id: string) => {
+    const res = await fetch(`/api/projects/${id}/duplicate`, { method: "POST" });
+    if (res.ok) {
+      const copy = await res.json();
+      setProjects((prev) => [...prev, copy]);
     }
   }, []);
 
@@ -239,6 +256,7 @@ export default function Dashboard() {
                 onOpen={() => router.push(`/project/${p.id}`)}
                 onRename={(name) => handleRename(p.id, name)}
                 onDelete={() => handleDelete(p.id)}
+                onDuplicate={() => handleDuplicate(p.id)}
               />
             ))}
           </div>
