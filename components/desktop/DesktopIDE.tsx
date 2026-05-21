@@ -7,6 +7,7 @@ import { CollabProvider } from "@/components/collaboration/CollabProvider";
 import CursorPresence from "@/components/collaboration/CursorPresence";
 import AiPanel from "./AiPanel";
 import ExecutionPanel from "./ExecutionPanel";
+import FileFinder from "./FileFinder";
 
 interface ProjectFile {
   id: string;
@@ -36,10 +37,12 @@ function IDECore({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
   const [aiOpen, setAiOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
+  const [finderOpen, setFinderOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
   const newFileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSave = useRef<{ id: string; value: string } | null>(null);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -59,6 +62,39 @@ function IDECore({ projectId }: { projectId: string }) {
     if (showNewFile) setTimeout(() => newFileInputRef.current?.focus(), 0);
   }, [showNewFile]);
 
+  // Global keyboard shortcuts
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === "p") {
+        e.preventDefault();
+        setFinderOpen((v) => !v);
+      } else if (mod && e.key === "`") {
+        e.preventDefault();
+        setTermOpen((v) => !v);
+      } else if (mod && e.key === "s") {
+        e.preventDefault();
+        // Flush debounced save immediately
+        if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+        if (pendingSave.current) {
+          const { id, value } = pendingSave.current;
+          pendingSave.current = null;
+          fetch(`/api/projects/${projectId}/files/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: value }),
+          });
+        }
+      } else if (e.key === "Escape") {
+        if (finderOpen) setFinderOpen(false);
+        else if (aiOpen) setAiOpen(false);
+        else if (termOpen) setTermOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [projectId, finderOpen, aiOpen, termOpen]);
+
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
   const handleChange = useCallback(
@@ -67,8 +103,10 @@ function IDECore({ projectId }: { projectId: string }) {
       setFiles((prev) =>
         prev.map((f) => (f.id === activeFileId ? { ...f, content: value } : f))
       );
+      pendingSave.current = { id: activeFileId, value };
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
+        pendingSave.current = null;
         fetch(`/api/projects/${projectId}/files/${activeFileId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -290,6 +328,13 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         )}
       </div>
+      {finderOpen && (
+        <FileFinder
+          files={files}
+          onSelect={(id) => setActiveFileId(id)}
+          onClose={() => setFinderOpen(false)}
+        />
+      )}
     </div>
   );
 }
