@@ -38,6 +38,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [finderOpen, setFinderOpen] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [shareToast, setShareToast] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
   const newFileInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +59,12 @@ function IDECore({ projectId }: { projectId: string }) {
       })
       .finally(() => setLoading(false));
   }, [projectId, router]);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/share`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setIsPublic(d.isPublic); });
+  }, [projectId]);
 
   useEffect(() => {
     if (showNewFile) setTimeout(() => newFileInputRef.current?.focus(), 0);
@@ -148,6 +156,22 @@ function IDECore({ projectId }: { projectId: string }) {
   const activeExt = activeFile?.path.split(".").pop() ?? "";
   const isRunnable = RUNNABLE_EXTS.has(activeExt);
 
+  async function toggleShare() {
+    const next = !isPublic;
+    const res = await fetch(`/api/projects/${projectId}/share`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPublic: next }),
+    });
+    if (res.ok) {
+      setIsPublic(next);
+      if (next) setShareToast(true);
+    }
+  }
+
+  const shareUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/share/${projectId}` : "";
+
   function openTerminal() {
     setTermOpen(true);
   }
@@ -164,6 +188,17 @@ function IDECore({ projectId }: { projectId: string }) {
             ← Projects
           </button>
           <div className="flex items-center gap-2">
+            <button
+              onClick={toggleShare}
+              className={`text-xs px-2 py-0.5 rounded transition-colors ${
+                isPublic
+                  ? "bg-green-700 text-green-100 hover:bg-green-600"
+                  : "text-gray-500 hover:text-gray-300"
+              }`}
+              title={isPublic ? "Shared — click to make private" : "Share project"}
+            >
+              {isPublic ? "⬤ Shared" : "Share"}
+            </button>
             <CursorPresence />
           </div>
         </div>
@@ -334,6 +369,24 @@ function IDECore({ projectId }: { projectId: string }) {
           onSelect={(id) => setActiveFileId(id)}
           onClose={() => setFinderOpen(false)}
         />
+      )}
+      {shareToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 bg-gray-800 border border-gray-600 rounded-xl shadow-xl text-sm text-white z-50">
+          <span>Project is now public:</span>
+          <code className="text-blue-400 text-xs">{shareUrl}</code>
+          <button
+            onClick={() => { navigator.clipboard.writeText(shareUrl); }}
+            className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-xs transition-colors"
+          >
+            Copy
+          </button>
+          <button
+            onClick={() => setShareToast(false)}
+            className="text-gray-400 hover:text-white ml-1"
+          >
+            ×
+          </button>
+        </div>
       )}
     </div>
   );
