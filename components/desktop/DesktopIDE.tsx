@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { CollabProvider } from "@/components/collaboration/CollabProvider";
 import CursorPresence from "@/components/collaboration/CursorPresence";
+import AiPanel from "./AiPanel";
 
 interface ProjectFile {
   id: string;
@@ -36,6 +37,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [aiOpen, setAiOpen] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -84,7 +86,9 @@ function IDECore({ projectId }: { projectId: string }) {
           >
             ← Projects
           </button>
-          <CursorPresence />
+          <div className="flex items-center gap-2">
+            <CursorPresence />
+          </div>
         </div>
         <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           Explorer
@@ -112,31 +116,52 @@ function IDECore({ projectId }: { projectId: string }) {
 
       {/* Editor pane */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
-          {activeFile?.path ?? "No file selected"}
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
+          <span className="truncate">{activeFile?.path ?? "No file selected"}</span>
+          <button
+            onClick={() => setAiOpen((v) => !v)}
+            className={`ml-3 px-2.5 py-1 text-xs rounded-md transition-colors shrink-0 ${
+              aiOpen
+                ? "bg-blue-600 text-white"
+                : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+            }`}
+            title="Toggle AI assistant (⌘K)"
+          >
+            ✦ AI
+          </button>
         </div>
-        <div className="flex-1">
-          {activeFile ? (
-            <Editor
-              key={activeFile.id}
-              height="100%"
-              language={activeFile.language ?? inferLanguage(activeFile.path)}
-              value={activeFile.content ?? ""}
-              theme="vs-dark"
-              onChange={handleChange}
-              options={{
-                fontSize: 14,
-                minimap: { enabled: true },
-                automaticLayout: true,
-                wordWrap: "on",
-              }}
+        <div className="flex-1 flex min-h-0">
+          <div className="flex-1 min-w-0">
+            {activeFile ? (
+              <Editor
+                key={activeFile.id}
+                height="100%"
+                language={activeFile.language ?? inferLanguage(activeFile.path)}
+                value={activeFile.content ?? ""}
+                theme="vs-dark"
+                onChange={handleChange}
+                options={{
+                  fontSize: 14,
+                  minimap: { enabled: true },
+                  automaticLayout: true,
+                  wordWrap: "on",
+                }}
+              />
+            ) : (
+              !loading && (
+                <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+                  Select a file
+                </div>
+              )
+            )}
+          </div>
+
+          {aiOpen && (
+            <AiPanel
+              fileContent={activeFile?.content ?? ""}
+              language={activeFile?.language ?? inferLanguage(activeFile?.path ?? "")}
+              onClose={() => setAiOpen(false)}
             />
-          ) : (
-            !loading && (
-              <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-                Select a file
-              </div>
-            )
           )}
         </div>
       </div>
