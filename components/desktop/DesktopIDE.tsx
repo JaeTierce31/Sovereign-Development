@@ -6,6 +6,7 @@ import { useUser } from "@clerk/nextjs";
 import { CollabProvider } from "@/components/collaboration/CollabProvider";
 import CursorPresence from "@/components/collaboration/CursorPresence";
 import AiPanel from "./AiPanel";
+import ExecutionPanel from "./ExecutionPanel";
 
 interface ProjectFile {
   id: string;
@@ -26,12 +27,15 @@ function inferLanguage(path: string): string {
   return LANGUAGE_MAP[path.split(".").pop() ?? ""] ?? "plaintext";
 }
 
+const RUNNABLE_EXTS = new Set(["js", "mjs", "cjs", "ts", "tsx", "py", "sh"]);
+
 function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [aiOpen, setAiOpen] = useState(false);
+  const [termOpen, setTermOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
   const newFileInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +105,13 @@ function IDECore({ projectId }: { projectId: string }) {
       if (activeFileId === fileId) setActiveFileId(next[0]?.id ?? null);
       return next;
     });
+  }
+
+  const activeExt = activeFile?.path.split(".").pop() ?? "";
+  const isRunnable = RUNNABLE_EXTS.has(activeExt);
+
+  function openTerminal() {
+    setTermOpen(true);
   }
 
   return (
@@ -178,21 +189,52 @@ function IDECore({ projectId }: { projectId: string }) {
 
       {/* Editor pane */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
           <span className="truncate">{activeFile?.path ?? "No file selected"}</span>
-          <button
-            onClick={() => setAiOpen((v) => !v)}
-            className={`ml-3 px-2.5 py-1 text-xs rounded-md transition-colors shrink-0 ${
-              aiOpen
-                ? "bg-blue-600 text-white"
-                : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
-            }`}
-            title="Toggle AI assistant"
-          >
-            ✦ AI
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {isRunnable && (
+              <button
+                onClick={openTerminal}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  termOpen
+                    ? "bg-green-700 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Open terminal / run file"
+              >
+                ▶ Run
+              </button>
+            )}
+            {!isRunnable && (
+              <button
+                onClick={() => setTermOpen((v) => !v)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  termOpen
+                    ? "bg-gray-700 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Toggle terminal"
+              >
+                ⌨ Terminal
+              </button>
+            )}
+            <button
+              onClick={() => setAiOpen((v) => !v)}
+              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                aiOpen
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+              }`}
+              title="Toggle AI assistant"
+            >
+              ✦ AI
+            </button>
+          </div>
         </div>
-        <div className="flex-1 flex min-h-0">
+
+        {/* Editor + AI panel */}
+        <div className="flex min-h-0" style={{ flex: termOpen ? "0 0 60%" : "1 1 0" }}>
           <div className="flex-1 min-w-0">
             {activeFile ? (
               <Editor
@@ -236,6 +278,17 @@ function IDECore({ projectId }: { projectId: string }) {
             />
           )}
         </div>
+
+        {/* Terminal panel */}
+        {termOpen && (
+          <div className="shrink-0" style={{ height: "40%" }}>
+            <ExecutionPanel
+              files={files}
+              activeFile={activeFile}
+              onClose={() => setTermOpen(false)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
