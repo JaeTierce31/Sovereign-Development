@@ -34,10 +34,12 @@ function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiOpen, setAiOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [finderOpen, setFinderOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -45,6 +47,24 @@ function IDECore({ projectId }: { projectId: string }) {
   const newFileInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
+
+  const openFile = useCallback((id: string) => {
+    setActiveFileId(id);
+    setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
+  }, []);
+
+  const closeTab = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t !== id);
+      if (activeFileId === id) {
+        const idx = prev.indexOf(id);
+        const fallback = next[idx] ?? next[idx - 1] ?? null;
+        setActiveFileId(fallback);
+      }
+      return next;
+    });
+  }, [activeFileId]);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -55,7 +75,10 @@ function IDECore({ projectId }: { projectId: string }) {
       .then((data: ProjectFile[] | null) => {
         if (!data) return;
         setFiles(data);
-        if (data.length > 0) setActiveFileId(data[0].id);
+        if (data.length > 0) {
+          setActiveFileId(data[0].id);
+          setOpenTabs([data[0].id]);
+        }
       })
       .finally(() => setLoading(false));
   }, [projectId, router]);
@@ -95,13 +118,17 @@ function IDECore({ projectId }: { projectId: string }) {
         }
       } else if (e.key === "Escape") {
         if (finderOpen) setFinderOpen(false);
+        else if (shortcutsOpen) setShortcutsOpen(false);
         else if (aiOpen) setAiOpen(false);
         else if (termOpen) setTermOpen(false);
+      } else if (e.key === "?" && !mod && !e.shiftKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -136,7 +163,7 @@ function IDECore({ projectId }: { projectId: string }) {
     if (res.ok) {
       const file: ProjectFile = await res.json();
       setFiles((prev) => [...prev, file]);
-      setActiveFileId(file.id);
+      openFile(file.id);
       setNewFileName("");
       setShowNewFile(false);
     }
@@ -146,11 +173,15 @@ function IDECore({ projectId }: { projectId: string }) {
     e.stopPropagation();
     if (!confirm("Delete this file?")) return;
     await fetch(`/api/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
-    setFiles((prev) => {
-      const next = prev.filter((f) => f.id !== fileId);
-      if (activeFileId === fileId) setActiveFileId(next[0]?.id ?? null);
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t !== fileId);
+      if (activeFileId === fileId) {
+        const idx = prev.indexOf(fileId);
+        setActiveFileId(next[idx] ?? next[idx - 1] ?? null);
+      }
       return next;
     });
+    setFiles((prev) => prev.filter((f) => f.id !== fileId));
   }
 
   const activeExt = activeFile?.path.split(".").pop() ?? "";
@@ -240,7 +271,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 }`}
               >
                 <button
-                  onClick={() => setActiveFileId(file.id)}
+                  onClick={() => openFile(file.id)}
                   className={`flex-1 text-left px-4 py-1.5 text-sm truncate ${
                     activeFileId === file.id ? "text-white" : "text-gray-400 hover:text-white"
                   }`}
@@ -262,9 +293,40 @@ function IDECore({ projectId }: { projectId: string }) {
 
       {/* Editor pane */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Tab bar */}
+        {openTabs.length > 0 && (
+          <div className="flex items-end bg-gray-950 border-b border-gray-700 overflow-x-auto shrink-0" style={{ minHeight: "32px" }}>
+            {openTabs.map((tabId) => {
+              const tabFile = files.find((f) => f.id === tabId);
+              if (!tabFile) return null;
+              const isActive = tabId === activeFileId;
+              return (
+                <div
+                  key={tabId}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-r border-gray-700 cursor-pointer shrink-0 select-none transition-colors ${
+                    isActive
+                      ? "bg-gray-900 text-white border-t-2 border-t-blue-500"
+                      : "bg-gray-950 text-gray-400 hover:text-gray-200 hover:bg-gray-900 border-t-2 border-t-transparent"
+                  }`}
+                  style={{ maxWidth: "180px" }}
+                  onClick={() => setActiveFileId(tabId)}
+                >
+                  <span className="truncate">{tabFile.path.split("/").pop()}</span>
+                  <button
+                    onClick={(e) => closeTab(tabId, e)}
+                    className="text-gray-600 hover:text-gray-300 leading-none ml-0.5 shrink-0"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
-          <span className="truncate">{activeFile?.path ?? "No file selected"}</span>
+          <span className="truncate text-xs text-gray-500">{activeFile?.path ?? "No file selected"}</span>
           <div className="flex items-center gap-2 shrink-0">
             {isRunnable && (
               <button
@@ -302,6 +364,13 @@ function IDECore({ projectId }: { projectId: string }) {
               title="Toggle AI assistant"
             >
               ✦ AI
+            </button>
+            <button
+              onClick={() => setShortcutsOpen(true)}
+              className="px-2 py-1 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+              title="Keyboard shortcuts (?)"
+            >
+              ?
             </button>
           </div>
         </div>
@@ -366,9 +435,33 @@ function IDECore({ projectId }: { projectId: string }) {
       {finderOpen && (
         <FileFinder
           files={files}
-          onSelect={(id) => setActiveFileId(id)}
+          onSelect={(id) => { openFile(id); setFinderOpen(false); }}
           onClose={() => setFinderOpen(false)}
         />
+      )}
+      {shortcutsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShortcutsOpen(false)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold">Keyboard Shortcuts</h2>
+              <button onClick={() => setShortcutsOpen(false)} className="text-gray-500 hover:text-white">×</button>
+            </div>
+            <div className="space-y-2 text-sm">
+              {[
+                ["⌘/Ctrl P", "Quick file open"],
+                ["⌘/Ctrl `", "Toggle terminal"],
+                ["⌘/Ctrl S", "Save immediately"],
+                ["Escape", "Close panel / modal"],
+                ["?", "Show this help"],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-gray-400">{desc}</span>
+                  <kbd className="px-2 py-0.5 text-xs bg-gray-800 border border-gray-600 rounded text-gray-300 font-mono">{key}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
       {shareToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 bg-gray-800 border border-gray-600 rounded-xl shadow-xl text-sm text-white z-50">
