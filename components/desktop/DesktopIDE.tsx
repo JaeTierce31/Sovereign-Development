@@ -8,6 +8,7 @@ import CursorPresence from "@/components/collaboration/CursorPresence";
 import AiPanel from "./AiPanel";
 import ExecutionPanel from "./ExecutionPanel";
 import FileFinder from "./FileFinder";
+import GlobalSearch from "./GlobalSearch";
 
 interface ProjectFile {
   id: string;
@@ -40,6 +41,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [termOpen, setTermOpen] = useState(false);
   const [finderOpen, setFinderOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -55,6 +58,7 @@ function IDECore({ projectId }: { projectId: string }) {
 
   const closeTab = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
     setOpenTabs((prev) => {
       const next = prev.filter((t) => t !== id);
       if (activeFileId === id) {
@@ -110,14 +114,29 @@ function IDECore({ projectId }: { projectId: string }) {
         if (pendingSave.current) {
           const { id, value } = pendingSave.current;
           pendingSave.current = null;
+          setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
           fetch(`/api/projects/${projectId}/files/${id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: value }),
           });
         }
+      } else if (mod && e.key === "w") {
+        e.preventDefault();
+        if (activeFileId) {
+          setOpenTabs((prev) => {
+            const next = prev.filter((t) => t !== activeFileId);
+            const idx = prev.indexOf(activeFileId);
+            setActiveFileId(next[idx] ?? next[idx - 1] ?? null);
+            return next;
+          });
+        }
+      } else if (mod && e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
       } else if (e.key === "Escape") {
-        if (finderOpen) setFinderOpen(false);
+        if (searchOpen) setSearchOpen(false);
+        else if (finderOpen) setFinderOpen(false);
         else if (shortcutsOpen) setShortcutsOpen(false);
         else if (aiOpen) setAiOpen(false);
         else if (termOpen) setTermOpen(false);
@@ -128,7 +147,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, activeFileId]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -138,10 +157,12 @@ function IDECore({ projectId }: { projectId: string }) {
       setFiles((prev) =>
         prev.map((f) => (f.id === activeFileId ? { ...f, content: value } : f))
       );
+      setDirtyTabs((prev) => { const next = new Set(prev); next.add(activeFileId); return next; });
       pendingSave.current = { id: activeFileId, value };
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         pendingSave.current = null;
+        setDirtyTabs((prev) => { const next = new Set(prev); next.delete(activeFileId); return next; });
         fetch(`/api/projects/${projectId}/files/${activeFileId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -311,6 +332,9 @@ function IDECore({ projectId }: { projectId: string }) {
                   style={{ maxWidth: "180px" }}
                   onClick={() => setActiveFileId(tabId)}
                 >
+                  {dirtyTabs.has(tabId) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
+                  )}
                   <span className="truncate">{tabFile.path.split("/").pop()}</span>
                   <button
                     onClick={(e) => closeTab(tabId, e)}
@@ -439,6 +463,13 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setFinderOpen(false)}
         />
       )}
+      {searchOpen && (
+        <GlobalSearch
+          projectId={projectId}
+          onSelect={(id) => { openFile(id); setSearchOpen(false); }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
       {shortcutsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShortcutsOpen(false)}>
           <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -449,6 +480,8 @@ function IDECore({ projectId }: { projectId: string }) {
             <div className="space-y-2 text-sm">
               {[
                 ["⌘/Ctrl P", "Quick file open"],
+                ["⌘/Ctrl Shift F", "Search across files"],
+                ["⌘/Ctrl W", "Close current tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
                 ["⌘/Ctrl S", "Save immediately"],
                 ["Escape", "Close panel / modal"],
