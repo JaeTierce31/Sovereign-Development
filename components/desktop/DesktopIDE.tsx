@@ -2,6 +2,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
+import { CollabProvider } from "@/components/collaboration/CollabProvider";
+import CursorPresence from "@/components/collaboration/CursorPresence";
 
 interface ProjectFile {
   id: string;
@@ -28,7 +31,7 @@ function inferLanguage(path: string): string {
   return LANGUAGE_MAP[ext] ?? "plaintext";
 }
 
-export default function DesktopIDE({ projectId }: { projectId: string }) {
+function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
@@ -81,6 +84,7 @@ export default function DesktopIDE({ projectId }: { projectId: string }) {
           >
             ← Projects
           </button>
+          <CursorPresence />
         </div>
         <div className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           Explorer
@@ -138,4 +142,19 @@ export default function DesktopIDE({ projectId }: { projectId: string }) {
       </div>
     </div>
   );
+}
+
+export default function DesktopIDE({ projectId }: { projectId: string }) {
+  const { user } = useUser();
+  const workerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL;
+
+  if (workerUrl && user?.id) {
+    return (
+      <CollabProvider projectId={projectId} userId={user.id}>
+        <IDECore projectId={projectId} />
+      </CollabProvider>
+    );
+  }
+
+  return <IDECore projectId={projectId} />;
 }

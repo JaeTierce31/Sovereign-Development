@@ -1,27 +1,56 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' });
+import { stripe } from '@/lib/stripe';
+import { db } from '@/lib/db';
+import { users } from '@/drizzle/schema';
+import { eq } from 'drizzle-orm';
 
 export async function POST(req: NextRequest) {
-  const sig = req.headers.get('stripe-signature')!;
+  const sig = req.headers.get('stripe-signature');
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!sig || !webhookSecret) {
+    return NextResponse.json({ error: 'Missing signature or webhook secret' }, { status: 400 });
+  }
+
   const body = await req.text();
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+    event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 
   switch (event.type) {
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted':
-      // TODO: update user tier in database
+    case 'checkout.session.completed': {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userId = session.metadata?.userId;
+      const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+      if (userId && customerId) {
+        await db
+          .update(users)
+          .set({ stripeCustomerId: customerId, tier: 'pro' })
+          .where(eq(users.id, userId));
+      }
       break;
-    default:
+    }
+
+    case 'customer.subscription.updated': {
+      const sub = event.data.object as Stripe.Subscription;
+      const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
+      const tier = sub.status === 'active' || sub.status === 'trialing' ? 'pro' : 'free';
+      await db.update(users).set({ tier }).where(eq(users.stripeCustomerId, customerId));
       break;
+    }
+
+    case 'customer.subscription.deleted': {
+      const sub = event.data.object as Stripe.Subscription;
+      const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer.id;
+      await db.update(users).set({ tier: 'free' }).where(eq(users.stripeCustomerId, customerId));
+      break;
+    }
   }
 
   return NextResponse.json({ received: true });

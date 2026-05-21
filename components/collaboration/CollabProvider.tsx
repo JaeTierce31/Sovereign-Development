@@ -26,12 +26,30 @@ export function CollabProvider({
   const [state, setState] = useState<CollabContextValue>({
     doc: null,
     send: null,
-    connectedUsers: [],
+    connectedUsers: [userId],
   });
 
   useEffect(() => {
-    const { doc, send } = connectToProject(projectId, userId);
-    setState((prev) => ({ ...prev, doc, send }));
+    const { doc, send, onPeerJoin, onPeerLeave, destroy } = connectToProject(projectId, userId);
+    setState((prev) => ({ ...prev, doc, send, connectedUsers: [userId] }));
+
+    onPeerJoin((peerId: string) => {
+      setState((prev) => ({
+        ...prev,
+        connectedUsers: prev.connectedUsers.includes(peerId)
+          ? prev.connectedUsers
+          : [...prev.connectedUsers, peerId],
+      }));
+    });
+
+    onPeerLeave((peerId: string) => {
+      setState((prev) => ({
+        ...prev,
+        connectedUsers: prev.connectedUsers.filter((id) => id !== peerId),
+      }));
+    });
+
+    return () => destroy();
   }, [projectId, userId]);
 
   return <CollabContext.Provider value={state}>{children}</CollabContext.Provider>;
