@@ -20,9 +20,10 @@ export default function MobileKeyboardRow({ editorRef }: { editorRef: any }) {
       <button onClick={() => insertText(';')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{';'}</button>
       <button onClick={() => insertText('\t')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">Tab</button>
       <button onClick={() => insertText('\n')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">↵</button>
-      <button onClick={() => {/* AI trigger */}} className="ml-auto bg-peregrine-orange text-white text-sm px-3 py-1 rounded-full">
-        ✨ AI
-      </button>
+      <button onClick={() => insertText('[')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'['}</button>
+      <button onClick={() => insertText(']')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{']'}</button>
+      <button onClick={() => insertText("'")} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{`'`}</button>
+      <button onClick={() => insertText('"')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'"'}</button>
     </div>
   );
 }

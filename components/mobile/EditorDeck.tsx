@@ -4,11 +4,15 @@ import { useState } from "react";
 import MobileEditor from "./MobileEditor";
 import MobileTerminal from "./MobileTerminal";
 import MobileActionBar from "./MobileActionBar";
+import MobileAiSheet from "./MobileAiSheet";
 
 export default function EditorDeck({ projectId }: { projectId: string }) {
-  const [activePane, setActivePane] = useState<"editor" | "terminal" | "preview">("editor");
+  const [activePane, setActivePane] = useState<"editor" | "terminal">("editor");
+  const [aiOpen, setAiOpen] = useState(false);
+  const [activeFileContent, setActiveFileContent] = useState("");
+  const [activeFileLang, setActiveFileLang] = useState("plaintext");
 
-  const handleDragEnd = (_: any, info: { offset: { y: number } }) => {
+  const handleDragEnd = (_: unknown, info: { offset: { y: number } }) => {
     if (info.offset.y > 50 && activePane === "editor") setActivePane("terminal");
     else if (info.offset.y < -50 && activePane === "terminal") setActivePane("editor");
   };
@@ -27,7 +31,13 @@ export default function EditorDeck({ projectId }: { projectId: string }) {
             onDragEnd={handleDragEnd}
             className="absolute inset-0"
           >
-            <MobileEditor projectId={projectId} />
+            <MobileEditor
+              projectId={projectId}
+              onFileChange={(content, lang) => {
+                setActiveFileContent(content);
+                setActiveFileLang(lang);
+              }}
+            />
           </motion.div>
         )}
         {activePane === "terminal" && (
@@ -39,13 +49,24 @@ export default function EditorDeck({ projectId }: { projectId: string }) {
             drag="y"
             dragConstraints={{ top: 0, bottom: 0 }}
             onDragEnd={handleDragEnd}
-            className="absolute inset-0 z-10 bg-peregrine-gray/90 backdrop-blur"
+            className="absolute inset-0 z-10 bg-gray-950"
           >
             <MobileTerminal projectId={projectId} />
           </motion.div>
         )}
       </AnimatePresence>
-      <MobileActionBar activePane={activePane} onPaneChange={setActivePane} />
+      <MobileActionBar
+        activePane={activePane}
+        onPaneChange={setActivePane}
+        onAiOpen={() => setAiOpen(true)}
+      />
+      {aiOpen && (
+        <MobileAiSheet
+          fileContent={activeFileContent}
+          language={activeFileLang}
+          onClose={() => setAiOpen(false)}
+        />
+      )}
     </div>
   );
 }

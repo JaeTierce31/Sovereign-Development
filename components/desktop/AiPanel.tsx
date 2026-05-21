@@ -1,6 +1,37 @@
 "use client";
 import { useRef, useEffect, useState, useCallback } from "react";
 
+function MessageContent({ content }: { content: string }) {
+  const parts = content.split(/(```[\w]*\n[\s\S]*?```)/g);
+  return (
+    <span>
+      {parts.map((part, i) => {
+        const codeMatch = part.match(/^```([\w]*)\n([\s\S]*?)```$/);
+        if (codeMatch) {
+          const code = codeMatch[2];
+          return (
+            <span key={i} className="block my-2">
+              <span className="flex items-center justify-between bg-gray-900 rounded-t px-2 py-0.5">
+                <span className="text-gray-500 text-[10px]">{codeMatch[1] || "code"}</span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(code)}
+                  className="text-gray-500 hover:text-gray-300 text-[10px] transition-colors"
+                >
+                  Copy
+                </button>
+              </span>
+              <code className="block bg-gray-900 rounded-b px-3 py-2 text-[11px] text-gray-100 overflow-x-auto whitespace-pre font-mono">
+                {code}
+              </code>
+            </span>
+          );
+        }
+        return <span key={i} style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{part}</span>;
+      })}
+    </span>
+  );
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -147,9 +178,10 @@ export default function AiPanel({ fileContent, language, onClose }: AiPanelProps
                   ? "bg-blue-600 text-white"
                   : "bg-gray-800 text-gray-100"
               }`}
-              style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
             >
-              {m.content || (streaming && m.role === "assistant" ? (
+              {m.content ? (
+                m.role === "assistant" ? <MessageContent content={m.content} /> : <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</span>
+              ) : (streaming && m.role === "assistant" ? (
                 <span className="inline-flex gap-1">
                   <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                   <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />

@@ -2,6 +2,7 @@
 import { useEffect, useState, useTransition, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
+import { TEMPLATES } from "@/lib/templates";
 
 interface Project {
   id: string;
@@ -102,6 +103,7 @@ export default function Dashboard() {
   const [creating, startCreate] = useTransition();
   const [newName, setNewName] = useState("");
   const [showInput, setShowInput] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState("blank");
 
   useEffect(() => {
     fetch("/api/projects")
@@ -117,7 +119,7 @@ export default function Dashboard() {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), templateId: selectedTemplate }),
       });
       if (res.ok) {
         const project = await res.json();
@@ -167,30 +169,51 @@ export default function Dashboard() {
         </div>
 
         {showInput && (
-          <form onSubmit={handleCreate} className="mb-6 flex gap-2">
-            <input
-              autoFocus
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Project name"
-              className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
-              onKeyDown={(e) => e.key === "Escape" && setShowInput(false)}
-            />
-            <button
-              type="submit"
-              disabled={creating || !newName.trim()}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-lg"
-            >
-              {creating ? "Creating…" : "Create"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowInput(false)}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
-            >
-              Cancel
-            </button>
-          </form>
+          <div className="mb-6 p-4 bg-gray-900 border border-gray-700 rounded-xl">
+            <form onSubmit={handleCreate}>
+              <div className="flex gap-2 mb-3">
+                <input
+                  autoFocus
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Project name"
+                  className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+                  onKeyDown={(e) => e.key === "Escape" && setShowInput(false)}
+                />
+                <button
+                  type="submit"
+                  disabled={creating || !newName.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-lg"
+                >
+                  {creating ? "Creating…" : "Create"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowInput(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg"
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {TEMPLATES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTemplate(t.id)}
+                    className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                      selectedTemplate === t.id
+                        ? "border-blue-500 bg-blue-600/20 text-blue-300"
+                        : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+                    }`}
+                    title={t.description}
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </form>
+          </div>
         )}
 
         {loading ? (

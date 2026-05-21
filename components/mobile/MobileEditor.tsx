@@ -23,9 +23,15 @@ function inferLang(path: string) {
   return LANG_MAP[path.split(".").pop() ?? ""] ?? "plaintext";
 }
 
-export default function MobileEditor({ projectId }: { projectId: string }) {
+export default function MobileEditor({
+  projectId,
+  onFileChange,
+}: {
+  projectId: string;
+  onFileChange?: (content: string, language: string) => void;
+}) {
   const router = useRouter();
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<unknown>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -35,7 +41,7 @@ export default function MobileEditor({ projectId }: { projectId: string }) {
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
       .then((r) => {
-        if (r.status === 404) { router.push("/"); return null; }
+        if (r.status === 404) { router.push("/dashboard"); return null; }
         return r.json();
       })
       .then((data: ProjectFile[] | null) => {
@@ -48,12 +54,19 @@ export default function MobileEditor({ projectId }: { projectId: string }) {
 
   const activeFile = files.find((f) => f.id === activeId) ?? null;
 
+  useEffect(() => {
+    if (activeFile) {
+      onFileChange?.(activeFile.content ?? "", activeFile.language ?? inferLang(activeFile.path));
+    }
+  }, [activeFile, onFileChange]);
+
   const handleChange = useCallback(
     (value: string | undefined) => {
       if (!activeId || value === undefined) return;
       setFiles((prev) =>
         prev.map((f) => (f.id === activeId ? { ...f, content: value } : f))
       );
+      onFileChange?.(value, activeFile?.language ?? inferLang(activeFile?.path ?? ""));
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         fetch(`/api/projects/${projectId}/files/${activeId}`, {
@@ -63,7 +76,7 @@ export default function MobileEditor({ projectId }: { projectId: string }) {
         });
       }, 800);
     },
-    [activeId, projectId]
+    [activeId, projectId, activeFile, onFileChange]
   );
 
   return (
@@ -71,7 +84,7 @@ export default function MobileEditor({ projectId }: { projectId: string }) {
       {/* Header bar */}
       <div className="flex items-center justify-between px-3 py-2 bg-gray-900 border-b border-gray-700 shrink-0">
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/dashboard")}
           className="text-xs text-gray-500 active:text-gray-300"
         >
           ← Projects
@@ -112,7 +125,7 @@ export default function MobileEditor({ projectId }: { projectId: string }) {
             value={activeFile.content ?? ""}
             theme="vs-dark"
             onChange={handleChange}
-            onMount={(editor) => (editorRef.current = editor)}
+            onMount={(editor) => { editorRef.current = editor; }}
             options={{
               fontSize: 14,
               lineNumbers: "off",
