@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { UserButton } from "@clerk/nextjs";
 
 interface Project {
   id: string;
@@ -44,12 +45,21 @@ export default function Dashboard() {
       <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-12">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-semibold text-white">Projects</h1>
-          <button
-            onClick={() => setShowInput(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
-          >
-            + New Project
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowInput(true)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+            >
+              + New Project
+            </button>
+            <button
+              onClick={() => router.push("/settings")}
+              className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              Settings
+            </button>
+            <UserButton />
+          </div>
         </div>
 
         {showInput && (
