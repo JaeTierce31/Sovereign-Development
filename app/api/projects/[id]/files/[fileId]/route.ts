@@ -29,3 +29,23 @@ export async function PUT(
 
   return NextResponse.json(file);
 }
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { id: string; fileId: string } }
+) {
+  const userId = await requireAuth();
+
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, params.id), eq(projects.ownerId, userId)));
+
+  if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  await db
+    .delete(files)
+    .where(and(eq(files.id, params.fileId), eq(files.projectId, params.id)));
+
+  return new NextResponse(null, { status: 204 });
+}
