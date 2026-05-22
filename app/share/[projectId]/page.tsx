@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 
 interface ProjectFile {
   id: string;
@@ -30,10 +31,13 @@ function inferLanguage(path: string): string {
 
 export default function SharePage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const router = useRouter();
+  const { isSignedIn, isLoaded } = useUser();
   const [project, setProject] = useState<Project | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "found" | "notfound">("loading");
+  const [forking, setForking] = useState(false);
 
   useEffect(() => {
     fetch(`/api/share/${projectId}`)
@@ -50,6 +54,23 @@ export default function SharePage() {
       })
       .catch(() => setStatus("notfound"));
   }, [projectId]);
+
+  async function handleFork() {
+    if (!isSignedIn) {
+      router.push(`/sign-up?redirect_url=/share/${projectId}`);
+      return;
+    }
+    setForking(true);
+    try {
+      const res = await fetch(`/api/share/${projectId}/fork`, { method: "POST" });
+      if (res.ok) {
+        const newProject = await res.json();
+        router.push(`/project/${newProject.id}`);
+      }
+    } finally {
+      setForking(false);
+    }
+  }
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -80,12 +101,17 @@ export default function SharePage() {
           <span className="text-white text-sm font-medium">{project?.name}</span>
           <span className="px-1.5 py-0.5 text-xs bg-gray-700 text-gray-400 rounded">Read-only</span>
         </div>
-        <a
-          href="/sign-up"
-          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg transition-colors"
-        >
-          Fork this project →
-        </a>
+        <div className="flex items-center gap-2">
+          {isLoaded && (
+            <button
+              onClick={handleFork}
+              disabled={forking}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs rounded-lg transition-colors"
+            >
+              {forking ? "Forking…" : isSignedIn ? "⑂ Fork to my account" : "Fork this project →"}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-1 min-h-0">
