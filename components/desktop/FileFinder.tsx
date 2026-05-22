@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 
 interface ProjectFile {
   id: string;
@@ -10,9 +10,23 @@ interface FileFinderProps {
   files: ProjectFile[];
   onSelect: (id: string) => void;
   onClose: () => void;
+  openTabs?: string[];
 }
 
-export default function FileFinder({ files, onSelect, onClose }: FileFinderProps) {
+function highlight(path: string, query: string) {
+  if (!query) return <span>{path}</span>;
+  const idx = path.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <span>{path}</span>;
+  return (
+    <>
+      <span>{path.slice(0, idx)}</span>
+      <span className="text-blue-300 font-semibold">{path.slice(idx, idx + query.length)}</span>
+      <span>{path.slice(idx + query.length)}</span>
+    </>
+  );
+}
+
+export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: FileFinderProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -22,9 +36,24 @@ export default function FileFinder({ files, onSelect, onClose }: FileFinderProps
     inputRef.current?.focus();
   }, []);
 
-  const matches = query.trim()
-    ? files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()))
-    : files;
+  // When no query: show open tabs first (most recently active last = reverse order),
+  // then remaining files not yet in tabs.
+  const matches = useMemo<(ProjectFile & { isRecent?: boolean })[]>(() => {
+    if (query.trim()) {
+      return files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()));
+    }
+    return [
+      ...openTabs
+        .slice()
+        .reverse()
+        .map((id) => files.find((f) => f.id === id))
+        .filter((f): f is ProjectFile => !!f)
+        .map((f) => ({ ...f, isRecent: true })),
+      ...files
+        .filter((f) => !openTabs.includes(f.id))
+        .map((f) => ({ ...f, isRecent: false })),
+    ];
+  }, [query, files, openTabs]);
 
   useEffect(() => {
     setSelected(0);
@@ -57,6 +86,11 @@ export default function FileFinder({ files, onSelect, onClose }: FileFinderProps
     item?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
+  // Find where non-recent files start (for the divider)
+  const firstNonRecentIdx = !query.trim()
+    ? matches.findIndex((f) => !f.isRecent)
+    : -1;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm"
@@ -84,6 +118,11 @@ export default function FileFinder({ files, onSelect, onClose }: FileFinderProps
         </div>
 
         <div ref={listRef} className="max-h-72 overflow-auto">
+          {!query.trim() && openTabs.length > 0 && (
+            <div className="px-4 pt-2 pb-1">
+              <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Open tabs</span>
+            </div>
+          )}
           {matches.length === 0 ? (
             <div className="px-4 py-6 text-center text-xs text-gray-600">No matching files</div>
           ) : (
@@ -91,18 +130,27 @@ export default function FileFinder({ files, onSelect, onClose }: FileFinderProps
               const parts = f.path.split("/");
               const filename = parts.pop() ?? f.path;
               const dir = parts.join("/");
+              const showDivider = i === firstNonRecentIdx && firstNonRecentIdx > 0;
               return (
-                <button
-                  key={f.id}
-                  onClick={() => confirm(i)}
-                  onMouseEnter={() => setSelected(i)}
-                  className={`w-full text-left px-4 py-2 flex items-center gap-3 transition-colors ${
-                    i === selected ? "bg-blue-600/20 text-white" : "text-gray-300 hover:bg-gray-800"
-                  }`}
-                >
-                  <span className="text-sm truncate">{filename}</span>
-                  {dir && <span className="text-xs text-gray-500 truncate">{dir}</span>}
-                </button>
+                <div key={f.id}>
+                  {showDivider && (
+                    <div className="px-4 pt-2 pb-1">
+                      <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">All files</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => confirm(i)}
+                    onMouseEnter={() => setSelected(i)}
+                    className={`w-full text-left px-4 py-2 flex items-center gap-3 transition-colors ${
+                      i === selected ? "bg-blue-600/20 text-white" : "text-gray-300 hover:bg-gray-800"
+                    }`}
+                  >
+                    <span className="text-sm truncate">
+                      {query ? highlight(filename, query) : filename}
+                    </span>
+                    {dir && <span className="text-xs text-gray-500 truncate">{dir}</span>}
+                  </button>
+                </div>
               );
             })
           )}

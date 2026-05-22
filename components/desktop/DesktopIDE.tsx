@@ -14,6 +14,7 @@ import FileTree from "./FileTree";
 import MarkdownPreview from "./MarkdownPreview";
 import InlineAiCommand from "./InlineAiCommand";
 import ProjectSettingsPanel from "./ProjectSettingsPanel";
+import ProjectStatsPanel from "./ProjectStatsPanel";
 
 interface EditorPrefs {
   fontSize: number;
@@ -69,6 +70,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [prefs, setPrefs] = useState<EditorPrefs>(DEFAULT_PREFS);
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -788,6 +790,13 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Status bar */}
         <div className="flex items-center justify-between px-3 py-0.5 bg-blue-900/40 border-t border-gray-800 text-xs text-gray-500 shrink-0 select-none">
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setStatsOpen((v) => !v)}
+              className="hover:text-white transition-colors"
+              title="Project stats"
+            >
+              {files.length} {files.length === 1 ? "file" : "files"}
+            </button>
             <span>{activeFile ? (activeFile.language ?? inferLanguage(activeFile.path)) : "—"}</span>
             {activeFile && (
               <button
@@ -875,11 +884,19 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      {statsOpen && (
+        <ProjectStatsPanel
+          files={files}
+          projectName={projectName}
+          onClose={() => setStatsOpen(false)}
+        />
+      )}
       {finderOpen && (
         <FileFinder
           files={files}
           onSelect={(id) => { openFile(id); setFinderOpen(false); }}
           onClose={() => setFinderOpen(false)}
+          openTabs={openTabs}
         />
       )}
       {searchOpen && (
