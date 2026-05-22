@@ -10,6 +10,25 @@ import ExecutionPanel from "./ExecutionPanel";
 import FileFinder from "./FileFinder";
 import GlobalSearch from "./GlobalSearch";
 
+interface EditorPrefs {
+  fontSize: number;
+  tabSize: number;
+  wordWrap: "on" | "off";
+  minimap: boolean;
+  theme: "vs-dark" | "light";
+}
+
+const PREFS_KEY = "peregrine:editor-prefs";
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark" };
+
+function loadPrefs(): EditorPrefs {
+  if (typeof window === "undefined") return DEFAULT_PREFS;
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? { ...DEFAULT_PREFS, ...JSON.parse(raw) } : DEFAULT_PREFS;
+  } catch { return DEFAULT_PREFS; }
+}
+
 interface ProjectFile {
   id: string;
   path: string;
@@ -42,6 +61,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [finderOpen, setFinderOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [prefs, setPrefs] = useState<EditorPrefs>(DEFAULT_PREFS);
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
@@ -69,6 +90,11 @@ function IDECore({ projectId }: { projectId: string }) {
       return next;
     });
   }, [activeFileId]);
+
+  useEffect(() => { setPrefs(loadPrefs()); }, []);
+  useEffect(() => {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  }, [prefs]);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -134,8 +160,12 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSearchOpen((v) => !v);
+      } else if (mod && e.key === ",") {
+        e.preventDefault();
+        setPrefsOpen((v) => !v);
       } else if (e.key === "Escape") {
-        if (searchOpen) setSearchOpen(false);
+        if (prefsOpen) setPrefsOpen(false);
+        else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
         else if (shortcutsOpen) setShortcutsOpen(false);
         else if (aiOpen) setAiOpen(false);
@@ -147,7 +177,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, activeFileId]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -390,6 +420,15 @@ function IDECore({ projectId }: { projectId: string }) {
               ✦ AI
             </button>
             <button
+              onClick={() => setPrefsOpen((v) => !v)}
+              className={`px-2 py-1 text-xs rounded transition-colors ${
+                prefsOpen ? "text-white bg-gray-700" : "text-gray-600 hover:text-gray-400"
+              }`}
+              title="Editor settings (⌘/Ctrl ,)"
+            >
+              ⚙
+            </button>
+            <button
               onClick={() => setShortcutsOpen(true)}
               className="px-2 py-1 text-xs text-gray-600 hover:text-gray-400 transition-colors"
               title="Keyboard shortcuts (?)"
@@ -408,13 +447,14 @@ function IDECore({ projectId }: { projectId: string }) {
                 height="100%"
                 language={activeFile.language ?? inferLanguage(activeFile.path)}
                 value={activeFile.content ?? ""}
-                theme="vs-dark"
+                theme={prefs.theme}
                 onChange={handleChange}
                 options={{
-                  fontSize: 14,
-                  minimap: { enabled: true },
+                  fontSize: prefs.fontSize,
+                  tabSize: prefs.tabSize,
+                  minimap: { enabled: prefs.minimap },
                   automaticLayout: true,
-                  wordWrap: "on",
+                  wordWrap: prefs.wordWrap,
                 }}
               />
             ) : (
@@ -470,6 +510,92 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setSearchOpen(false)}
         />
       )}
+      {prefsOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-end pt-12 pr-4" onClick={() => setPrefsOpen(false)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-5 w-72 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white text-sm font-semibold">Editor Settings</h2>
+              <button onClick={() => setPrefsOpen(false)} className="text-gray-500 hover:text-white text-sm">×</button>
+            </div>
+            <div className="space-y-4">
+              {/* Font size */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Font size</label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setPrefs((p) => ({ ...p, fontSize: Math.max(10, p.fontSize - 1) }))}
+                    className="w-6 h-6 flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-sm"
+                  >−</button>
+                  <span className="text-xs text-white w-6 text-center">{prefs.fontSize}</span>
+                  <button
+                    onClick={() => setPrefs((p) => ({ ...p, fontSize: Math.min(24, p.fontSize + 1) }))}
+                    className="w-6 h-6 flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-sm"
+                  >+</button>
+                </div>
+              </div>
+              {/* Tab size */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Tab size</label>
+                <select
+                  value={prefs.tabSize}
+                  onChange={(e) => setPrefs((p) => ({ ...p, tabSize: Number(e.target.value) }))}
+                  className="text-xs bg-gray-800 border border-gray-700 text-white rounded px-2 py-1 focus:outline-none focus:border-blue-500"
+                >
+                  <option value={2}>2 spaces</option>
+                  <option value={4}>4 spaces</option>
+                  <option value={8}>8 spaces</option>
+                </select>
+              </div>
+              {/* Word wrap */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Word wrap</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, wordWrap: p.wordWrap === "on" ? "off" : "on" }))}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${prefs.wordWrap === "on" ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${prefs.wordWrap === "on" ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Minimap */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Minimap</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, minimap: !p.minimap }))}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${prefs.minimap ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${prefs.minimap ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Theme */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Theme</label>
+                <div className="flex gap-1">
+                  {(["vs-dark", "light"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setPrefs((p) => ({ ...p, theme: t }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                        prefs.theme === t
+                          ? "border-blue-500 bg-blue-600/20 text-blue-300"
+                          : "border-gray-700 text-gray-400 hover:border-gray-500"
+                      }`}
+                    >
+                      {t === "vs-dark" ? "Dark" : "Light"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Reset */}
+              <button
+                onClick={() => setPrefs(DEFAULT_PREFS)}
+                className="w-full text-xs text-gray-500 hover:text-gray-300 pt-1 text-center transition-colors"
+              >
+                Reset to defaults
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {shortcutsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShortcutsOpen(false)}>
           <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -484,6 +610,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl W", "Close current tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
                 ["⌘/Ctrl S", "Save immediately"],
+                ["⌘/Ctrl ,", "Editor settings"],
                 ["Escape", "Close panel / modal"],
                 ["?", "Show this help"],
               ].map(([key, desc]) => (
