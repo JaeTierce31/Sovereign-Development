@@ -3,7 +3,7 @@ import { requireAuth } from '@/lib/auth';
 import { syncUser } from '@/lib/syncUser';
 import { db } from '@/lib/db';
 import { projects, files } from '@/drizzle/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { TEMPLATES } from '@/lib/templates';
 
 const LANG_MAP: Record<string, string> = {
@@ -21,11 +21,21 @@ function inferLang(path: string): string {
 export async function GET() {
   const userId = await requireAuth();
   await syncUser(userId);
+
   const rows = await db
-    .select()
+    .select({
+      id: projects.id,
+      name: projects.name,
+      ownerId: projects.ownerId,
+      isPublic: projects.isPublic,
+      domain: projects.domain,
+      createdAt: projects.createdAt,
+      fileCount: sql<number>`(select count(*) from files where files.project_id = ${projects.id})::int`,
+    })
     .from(projects)
     .where(eq(projects.ownerId, userId))
     .orderBy(projects.createdAt);
+
   return NextResponse.json(rows);
 }
 

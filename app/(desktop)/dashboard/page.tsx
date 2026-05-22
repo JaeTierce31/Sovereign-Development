@@ -10,6 +10,8 @@ interface Project {
   id: string;
   name: string;
   createdAt: number;
+  fileCount?: number;
+  isPublic?: boolean;
 }
 
 function ProjectCard({
@@ -72,8 +74,20 @@ function ProjectCard({
           <div className="font-medium text-white group-hover:text-blue-400 transition-colors mb-1 pr-14 truncate">
             {project.name}
           </div>
-          <div className="text-xs text-gray-500">
-            {new Date(project.createdAt).toLocaleDateString()}
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            <span className="text-xs text-gray-500">
+              {new Date(project.createdAt).toLocaleDateString()}
+            </span>
+            {project.fileCount !== undefined && (
+              <span className="text-xs text-gray-600">
+                {project.fileCount} {project.fileCount === 1 ? "file" : "files"}
+              </span>
+            )}
+            {project.isPublic && (
+              <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-500 rounded">
+                public
+              </span>
+            )}
           </div>
         </button>
       )}
@@ -107,6 +121,8 @@ function ProjectCard({
   );
 }
 
+type SortKey = "newest" | "oldest" | "az" | "za";
+
 export default function Dashboard() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -117,6 +133,9 @@ export default function Dashboard() {
   const [selectedTemplate, setSelectedTemplate] = useState("blank");
   const [importState, setImportState] = useState<ImportState>("idle");
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortKey>("newest");
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/projects")
@@ -124,6 +143,26 @@ export default function Dashboard() {
       .then((data) => setProjects(data))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const sortedFiltered = projects
+    .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (sort === "newest") return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+      if (sort === "oldest") return (a.createdAt ?? 0) - (b.createdAt ?? 0);
+      if (sort === "az") return a.name.localeCompare(b.name);
+      return b.name.localeCompare(a.name);
+    });
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -190,8 +229,13 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-peregrine-dark flex flex-col">
       <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-12">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-semibold text-white">Projects</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-semibold text-white">
+            Projects
+            {!loading && projects.length > 0 && (
+              <span className="ml-2 text-base font-normal text-gray-500">({projects.length})</span>
+            )}
+          </h1>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowInput(true)}
@@ -223,6 +267,38 @@ export default function Dashboard() {
             <UserButton />
           </div>
         </div>
+
+        {!loading && projects.length > 0 && (
+          <div className="flex items-center gap-2 mb-6">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Filter projects… (⌘F)"
+                className="w-full pl-8 pr-3 py-1.5 bg-gray-900 border border-gray-700 focus:border-blue-500 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none"
+                onKeyDown={(e) => { if (e.key === "Escape") setSearch(""); }}
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-sm">×</button>
+              )}
+            </div>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="px-2 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-400 focus:outline-none focus:border-blue-500"
+            >
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="az">A → Z</option>
+              <option value="za">Z → A</option>
+            </select>
+          </div>
+        )}
 
         {showInput && (
           <div className="mb-6 p-4 bg-gray-900 border border-gray-700 rounded-xl">
@@ -295,9 +371,16 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+        ) : sortedFiltered.length === 0 ? (
+          <div className="text-center py-12 text-gray-500 text-sm">
+            No projects match &ldquo;{search}&rdquo;
+            <button onClick={() => setSearch("")} className="ml-2 text-blue-500 hover:text-blue-400">
+              Clear
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((p) => (
+            {sortedFiltered.map((p) => (
               <ProjectCard
                 key={p.id}
                 project={p}
