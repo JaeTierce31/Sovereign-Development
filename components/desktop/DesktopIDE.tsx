@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Editor from "@monaco-editor/react";
+import JSZip from "jszip";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { CollabProvider } from "@/components/collaboration/CollabProvider";
@@ -64,6 +65,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [prefs, setPrefs] = useState<EditorPrefs>(DEFAULT_PREFS);
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -277,14 +279,39 @@ function IDECore({ projectId }: { projectId: string }) {
   const shareUrl = typeof window !== "undefined"
     ? `${window.location.origin}/share/${projectId}` : "";
 
+  async function exportProject() {
+    const zip = new JSZip();
+    for (const f of files) {
+      zip.file(f.path, f.content ?? "");
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `project-${projectId.slice(0, 8)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function openTerminal() {
     setTermOpen(true);
   }
 
   return (
     <div className="h-full w-full flex bg-peregrine-dark">
+      {/* Sidebar toggle tab (always visible) */}
+      <button
+        onClick={() => setSidebarOpen((v) => !v)}
+        className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-3 h-12 bg-gray-800 hover:bg-gray-700 border border-gray-600 border-l-0 rounded-r flex items-center justify-center text-gray-500 hover:text-gray-300 transition-colors"
+        style={{ left: sidebarOpen ? "224px" : "0px" }}
+        title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+      >
+        {sidebarOpen ? "‹" : "›"}
+      </button>
+
       {/* Sidebar */}
-      <div className="w-56 bg-gray-900 border-r border-gray-700 flex flex-col">
+      {sidebarOpen && (
+      <div className="w-56 bg-gray-900 border-r border-gray-700 flex flex-col shrink-0">
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
           <button
             onClick={() => router.push("/dashboard")}
@@ -387,6 +414,7 @@ function IDECore({ projectId }: { projectId: string }) {
           )}
         </div>
       </div>
+      )} {/* end sidebarOpen */}
 
       {/* Editor pane */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -473,6 +501,14 @@ function IDECore({ projectId }: { projectId: string }) {
               title="Editor settings (⌘/Ctrl ,)"
             >
               ⚙
+            </button>
+            <button
+              onClick={exportProject}
+              className="px-2 py-1 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+              title="Export project as ZIP"
+              disabled={files.length === 0}
+            >
+              ↓ ZIP
             </button>
             <button
               onClick={() => setShortcutsOpen(true)}
