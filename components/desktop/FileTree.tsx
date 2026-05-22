@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { timeAgo } from "@/lib/timeAgo";
 
 const FILE_ICONS: Record<string, { label: string; className: string }> = {
   ts:   { label: "TS",  className: "text-blue-400" },
@@ -49,6 +50,7 @@ export interface ProjectFile {
   path: string;
   content: string | null;
   language: string | null;
+  updatedAt?: number | null;
 }
 
 interface TreeNode {
@@ -220,7 +222,7 @@ function TreeNodeRow({
         className={`flex-1 text-left py-1.5 pr-2 text-xs truncate flex items-center gap-1 ${
           isActive ? "text-white" : "text-gray-400 hover:text-white"
         }`}
-        title={file.path}
+        title={file.updatedAt ? `${file.path}\nModified ${timeAgo(file.updatedAt)}` : file.path}
       >
         <FileIcon filename={node.name} />
         <span className="truncate">{node.name}</span>

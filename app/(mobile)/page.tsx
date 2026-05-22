@@ -2,6 +2,7 @@
 import { useEffect, useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { TEMPLATES } from "@/lib/templates";
+import { timeAgo, formatDate } from "@/lib/timeAgo";
 
 interface Project {
   id: string;
@@ -305,8 +306,8 @@ export default function MobileHome() {
                       >
                         <p className="text-white text-sm font-medium truncate">{p.name}</p>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-gray-600">
-                            {new Date(p.createdAt).toLocaleDateString()}
+                          <span className="text-xs text-gray-600" title={new Date(p.createdAt).toLocaleString()}>
+                            {getLastOpened(p.id) ? `opened ${timeAgo(getLastOpened(p.id))}` : formatDate(p.createdAt)}
                           </span>
                           {p.fileCount !== undefined && (
                             <span className="text-xs text-gray-700">

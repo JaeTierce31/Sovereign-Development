@@ -15,6 +15,7 @@ import MarkdownPreview from "./MarkdownPreview";
 import InlineAiCommand from "./InlineAiCommand";
 import ProjectSettingsPanel from "./ProjectSettingsPanel";
 import ProjectStatsPanel from "./ProjectStatsPanel";
+import { timeAgo } from "@/lib/timeAgo";
 
 interface EditorPrefs {
   fontSize: number;
@@ -42,6 +43,7 @@ interface ProjectFile {
   path: string;
   content: string | null;
   language: string | null;
+  updatedAt?: number | null;
 }
 
 const LANGUAGE_MAP: Record<string, string> = {
@@ -296,11 +298,13 @@ function IDECore({ projectId }: { projectId: string }) {
       saveTimer.current = setTimeout(() => {
         pendingSave.current = null;
         setDirtyTabs((prev) => { const next = new Set(prev); next.delete(activeFileId); return next; });
+        const savedAt = Date.now();
         fetch(`/api/projects/${projectId}/files/${activeFileId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: value }),
         }).then(() => {
+          setFiles((prev) => prev.map((f) => f.id === activeFileId ? { ...f, updatedAt: savedAt } : f));
           setSaveStatus("saved");
           if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
           saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
@@ -815,6 +819,11 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
           <div className="flex items-center gap-3">
             <span>UTF-8</span>
+            {activeFile?.updatedAt && (
+              <span title={new Date(activeFile.updatedAt).toLocaleString()}>
+                {timeAgo(activeFile.updatedAt)}
+              </span>
+            )}
             {activeFile && (
               <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
             )}

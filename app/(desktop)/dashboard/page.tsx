@@ -3,6 +3,7 @@ import { useEffect, useState, useTransition, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { TEMPLATES } from "@/lib/templates";
+import { timeAgo, formatDate } from "@/lib/timeAgo";
 
 type ImportState = "idle" | "uploading" | "done" | "error";
 
@@ -23,6 +24,7 @@ interface Project {
   createdAt: number;
   fileCount?: number;
   isPublic?: boolean;
+  lastOpened?: number;
 }
 
 function ProjectCard({
@@ -35,6 +37,7 @@ function ProjectCard({
   pinned,
   onPin,
   copied,
+  lastOpened,
 }: {
   project: Project;
   onOpen: () => void;
@@ -45,6 +48,7 @@ function ProjectCard({
   pinned: boolean;
   onPin: () => void;
   copied: boolean;
+  lastOpened: number;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.name);
@@ -97,9 +101,15 @@ function ProjectCard({
             {project.name}
           </div>
           <div className="flex items-center gap-2 flex-wrap mt-1">
-            <span className="text-xs text-gray-500">
-              {new Date(project.createdAt).toLocaleDateString()}
-            </span>
+            {lastOpened ? (
+              <span className="text-xs text-gray-500" title={`Created ${formatDate(project.createdAt)}`}>
+                opened {timeAgo(lastOpened)}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-500" title={new Date(project.createdAt).toLocaleString()}>
+                {formatDate(project.createdAt)}
+              </span>
+            )}
             {project.fileCount !== undefined && (
               <span className="text-xs text-gray-600">
                 {project.fileCount} {project.fileCount === 1 ? "file" : "files"}
@@ -479,6 +489,7 @@ export default function Dashboard() {
                 pinned={pinnedIds.has(p.id)}
                 onPin={() => handlePin(p.id)}
                 copied={copiedId === p.id}
+                lastOpened={getLastOpened(p.id)}
               />
             ))}
           </div>
