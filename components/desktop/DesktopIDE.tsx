@@ -681,6 +681,19 @@ function IDECore({ projectId }: { projectId: string }) {
             {activeFile && (
               <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
             )}
+            <span className="flex items-center gap-1">
+              <button
+                onClick={() => setPrefs((p) => ({ ...p, fontSize: Math.max(10, p.fontSize - 1) }))}
+                className="w-4 h-4 flex items-center justify-center hover:text-white rounded transition-colors"
+                title="Decrease font size"
+              >−</button>
+              <span className="w-6 text-center">{prefs.fontSize}</span>
+              <button
+                onClick={() => setPrefs((p) => ({ ...p, fontSize: Math.min(24, p.fontSize + 1) }))}
+                className="w-4 h-4 flex items-center justify-center hover:text-white rounded transition-colors"
+                title="Increase font size"
+              >+</button>
+            </span>
           </div>
         </div>
       </div>
