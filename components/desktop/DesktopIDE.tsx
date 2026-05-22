@@ -219,6 +219,22 @@ function IDECore({ projectId }: { projectId: string }) {
             return next;
           });
         }
+      } else if (mod && e.key === "PageDown") {
+        e.preventDefault();
+        setOpenTabs((prev) => {
+          if (prev.length < 2) return prev;
+          const idx = prev.indexOf(activeFileId ?? "");
+          setActiveFileId(prev[(idx + 1) % prev.length]);
+          return prev;
+        });
+      } else if (mod && e.key === "PageUp") {
+        e.preventDefault();
+        setOpenTabs((prev) => {
+          if (prev.length < 2) return prev;
+          const idx = prev.indexOf(activeFileId ?? "");
+          setActiveFileId(prev[(idx - 1 + prev.length) % prev.length]);
+          return prev;
+        });
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSearchOpen((v) => !v);
@@ -781,6 +797,8 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl P", "Quick file open"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
+                ["⌘/Ctrl PageDown", "Next tab"],
+                ["⌘/Ctrl PageUp", "Previous tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
                 ["⌘/Ctrl S", "Save immediately"],
                 ["⌘/Ctrl ,", "Editor settings"],
