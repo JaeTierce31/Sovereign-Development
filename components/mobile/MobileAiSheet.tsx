@@ -7,14 +7,63 @@ interface Message {
   content: string;
 }
 
+function MobileMessageContent({
+  content,
+  onApply,
+}: {
+  content: string;
+  onApply?: (code: string) => void;
+}) {
+  const parts = content.split(/(```[\w]*\n[\s\S]*?```)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const codeMatch = part.match(/^```([\w]*)\n([\s\S]*?)```$/);
+        if (codeMatch) {
+          const code = codeMatch[2];
+          return (
+            <span key={i} className="block my-2 text-left">
+              <span className="flex items-center justify-between bg-gray-900 rounded-t px-2 py-1">
+                <span className="text-gray-500 text-[10px]">{codeMatch[1] || "code"}</span>
+                <span className="flex items-center gap-3">
+                  {onApply && (
+                    <button
+                      onClick={() => onApply(code)}
+                      className="text-blue-400 text-[11px]"
+                    >
+                      Apply
+                    </button>
+                  )}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(code)}
+                    className="text-gray-400 text-[11px]"
+                  >
+                    Copy
+                  </button>
+                </span>
+              </span>
+              <code className="block bg-gray-900 rounded-b px-3 py-2 text-[11px] text-gray-100 overflow-x-auto whitespace-pre font-mono">
+                {code}
+              </code>
+            </span>
+          );
+        }
+        return <span key={i} style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 export default function MobileAiSheet({
   fileContent,
   language,
   onClose,
+  onApplyCode,
 }: {
   fileContent: string;
   language: string;
   onClose: () => void;
+  onApplyCode?: (code: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -126,9 +175,12 @@ export default function MobileAiSheet({
                 className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
                   m.role === "user" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-100"
                 }`}
-                style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
               >
-                {m.content || (streaming && m.role === "assistant" ? (
+                {m.content ? (
+                  m.role === "assistant"
+                    ? <MobileMessageContent content={m.content} onApply={onApplyCode} />
+                    : <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</span>
+                ) : (streaming && m.role === "assistant" ? (
                   <span className="inline-flex gap-1">
                     <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                     <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />

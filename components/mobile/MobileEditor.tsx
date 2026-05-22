@@ -310,6 +310,18 @@ export default function MobileEditor({
           fileContent={activeFile.content ?? ""}
           language={activeFile.language ?? inferLang(activeFile.path)}
           onClose={() => setAiOpen(false)}
+          onApplyCode={(code) => {
+            const editor = editorRef.current as {
+              executeEdits?: (source: string, edits: unknown[]) => void;
+              getSelection?: () => unknown;
+              getModel?: () => { getFullModelRange?: () => unknown } | null;
+            } | null;
+            if (!editor?.executeEdits || !editor?.getModel) return;
+            const model = editor.getModel();
+            if (!model) return;
+            const selection = editor.getSelection?.() ?? model.getFullModelRange?.();
+            editor.executeEdits("ai-apply", [{ range: selection, text: code }]);
+          }}
         />
       )}
     </div>

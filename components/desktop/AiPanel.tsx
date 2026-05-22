@@ -1,7 +1,13 @@
 "use client";
-import { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 
-function MessageContent({ content }: { content: string }) {
+function MessageContent({
+  content,
+  onApply,
+}: {
+  content: string;
+  onApply?: (code: string) => void;
+}) {
   const parts = content.split(/(```[\w]*\n[\s\S]*?```)/g);
   return (
     <span>
@@ -13,12 +19,22 @@ function MessageContent({ content }: { content: string }) {
             <span key={i} className="block my-2">
               <span className="flex items-center justify-between bg-gray-900 rounded-t px-2 py-0.5">
                 <span className="text-gray-500 text-[10px]">{codeMatch[1] || "code"}</span>
-                <button
-                  onClick={() => navigator.clipboard.writeText(code)}
-                  className="text-gray-500 hover:text-gray-300 text-[10px] transition-colors"
-                >
-                  Copy
-                </button>
+                <span className="flex items-center gap-2">
+                  {onApply && (
+                    <button
+                      onClick={() => onApply(code)}
+                      className="text-blue-400 hover:text-blue-300 text-[10px] transition-colors"
+                    >
+                      Apply
+                    </button>
+                  )}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(code)}
+                    className="text-gray-500 hover:text-gray-300 text-[10px] transition-colors"
+                  >
+                    Copy
+                  </button>
+                </span>
               </span>
               <code className="block bg-gray-900 rounded-b px-3 py-2 text-[11px] text-gray-100 overflow-x-auto whitespace-pre font-mono">
                 {code}
@@ -42,9 +58,10 @@ interface AiPanelProps {
   fileContent: string;
   language: string;
   onClose: () => void;
+  editorRef?: React.RefObject<unknown>;
 }
 
-export default function AiPanel({ fileContent, language, onClose }: AiPanelProps) {
+export default function AiPanel({ fileContent, language, onClose, editorRef }: AiPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -52,6 +69,21 @@ export default function AiPanel({ fileContent, language, onClose }: AiPanelProps
   const [streaming, setStreaming] = useState(false);
   const [unconfigured, setUnconfigured] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  function applyToEditor(code: string) {
+    const editor = editorRef?.current as {
+      executeEdits?: (source: string, edits: unknown[]) => void;
+      getSelection?: () => unknown;
+      getModel?: () => { getFullModelRange?: () => unknown } | null;
+    } | null;
+    if (!editor?.executeEdits || !editor?.getModel) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const selection = editor.getSelection?.() ?? model.getFullModelRange?.();
+    editor.executeEdits("ai-apply", [{ range: selection, text: code }]);
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -180,7 +212,7 @@ export default function AiPanel({ fileContent, language, onClose }: AiPanelProps
               }`}
             >
               {m.content ? (
-                m.role === "assistant" ? <MessageContent content={m.content} /> : <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</span>
+                m.role === "assistant" ? <MessageContent content={m.content} onApply={editorRef ? applyToEditor : undefined} /> : <span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.content}</span>
               ) : (streaming && m.role === "assistant" ? (
                 <span className="inline-flex gap-1">
                   <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
