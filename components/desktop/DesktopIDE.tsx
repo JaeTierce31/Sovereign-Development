@@ -26,6 +26,8 @@ interface EditorPrefs {
 const PREFS_KEY = "peregrine:editor-prefs";
 const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark" };
 
+function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
+
 function loadPrefs(): EditorPrefs {
   if (typeof window === "undefined") return DEFAULT_PREFS;
   try {
@@ -122,13 +124,37 @@ function IDECore({ projectId }: { projectId: string }) {
       .then((data: ProjectFile[] | null) => {
         if (!data) return;
         setFiles(data);
-        if (data.length > 0) {
+        const validIds = new Set(data.map((f) => f.id));
+        let saved: { activeFileId: string | null; openTabs: string[] } | null = null;
+        try {
+          const raw = localStorage.getItem(getTabsKey(projectId));
+          if (raw) saved = JSON.parse(raw);
+        } catch { /* ignore */ }
+        const restoredTabs = saved?.openTabs?.filter((id) => validIds.has(id)) ?? [];
+        const restoredActive =
+          saved?.activeFileId && validIds.has(saved.activeFileId)
+            ? saved.activeFileId
+            : restoredTabs[0] ?? null;
+        if (restoredTabs.length > 0) {
+          setOpenTabs(restoredTabs);
+          setActiveFileId(restoredActive);
+        } else if (data.length > 0) {
           setActiveFileId(data[0].id);
           setOpenTabs([data[0].id]);
         }
       })
       .finally(() => setLoading(false));
   }, [projectId, router]);
+
+  useEffect(() => {
+    if (loading) return;
+    try {
+      localStorage.setItem(
+        getTabsKey(projectId),
+        JSON.stringify({ activeFileId, openTabs })
+      );
+    } catch { /* ignore */ }
+  }, [openTabs, activeFileId, projectId, loading]);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}`)
