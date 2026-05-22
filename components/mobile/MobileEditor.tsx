@@ -48,6 +48,8 @@ export default function MobileEditor({
   const [renameVal, setRenameVal] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const pickerSearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -98,6 +100,13 @@ export default function MobileEditor({
   useEffect(() => {
     if (renamingId) setTimeout(() => renameInputRef.current?.focus(), 50);
   }, [renamingId]);
+
+  useEffect(() => {
+    if (showPicker) {
+      setPickerSearch("");
+      setTimeout(() => pickerSearchRef.current?.focus(), 50);
+    }
+  }, [showPicker]);
 
   async function deleteFile(fileId: string) {
     if (!confirm("Delete this file?")) return;
@@ -215,10 +224,25 @@ export default function MobileEditor({
 
       {/* File picker overlay */}
       {showPicker && (
-        <div className="absolute inset-x-0 top-10 z-50 bg-gray-900 border-b border-gray-700 max-h-64 overflow-auto shadow-xl">
+        <div className="absolute inset-x-0 top-10 z-50 bg-gray-900 border-b border-gray-700 shadow-xl flex flex-col max-h-72">
+          {files.length > 4 && (
+            <div className="px-3 py-2 border-b border-gray-700 shrink-0">
+              <input
+                ref={pickerSearchRef}
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                placeholder="Filter files…"
+                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-700 focus:border-blue-500 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none"
+                onKeyDown={(e) => { if (e.key === "Escape") setShowPicker(false); }}
+              />
+            </div>
+          )}
+          <div className="overflow-auto">
           {files.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-500">No files yet</div>
-          ) : files.map((f) => (
+          ) : files.filter((f) => !pickerSearch || f.path.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 ? (
+            <div className="px-4 py-3 text-sm text-gray-500">No match for &ldquo;{pickerSearch}&rdquo;</div>
+          ) : files.filter((f) => !pickerSearch || f.path.toLowerCase().includes(pickerSearch.toLowerCase())).map((f) => (
             <div
               key={f.id}
               className={`flex items-center border-b border-gray-800 last:border-0 ${
@@ -268,6 +292,7 @@ export default function MobileEditor({
               )}
             </div>
           ))}
+          </div>
         </div>
       )}
 
