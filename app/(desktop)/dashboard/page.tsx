@@ -6,6 +6,17 @@ import { TEMPLATES } from "@/lib/templates";
 
 type ImportState = "idle" | "uploading" | "done" | "error";
 
+const PINNED_KEY = "peregrine:pinned-projects";
+function loadPinned(): Set<string> {
+  try {
+    const raw = localStorage.getItem(PINNED_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+function savePinned(set: Set<string>) {
+  try { localStorage.setItem(PINNED_KEY, JSON.stringify([...set])); } catch { /* ignore */ }
+}
+
 interface Project {
   id: string;
   name: string;
@@ -20,12 +31,16 @@ function ProjectCard({
   onRename,
   onDelete,
   onDuplicate,
+  pinned,
+  onPin,
 }: {
   project: Project;
   onOpen: () => void;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
   onDuplicate: () => Promise<void>;
+  pinned: boolean;
+  onPin: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.name);
@@ -69,9 +84,10 @@ function ProjectCard({
       ) : (
         <button
           onClick={onOpen}
-          className="w-full text-left p-4 bg-gray-900 hover:bg-gray-800 border border-gray-700 hover:border-gray-500 rounded-xl transition-colors"
+          className={`w-full text-left p-4 bg-gray-900 hover:bg-gray-800 border rounded-xl transition-colors ${pinned ? "border-blue-800 hover:border-blue-700" : "border-gray-700 hover:border-gray-500"}`}
         >
-          <div className="font-medium text-white group-hover:text-blue-400 transition-colors mb-1 pr-14 truncate">
+          <div className="font-medium text-white group-hover:text-blue-400 transition-colors mb-1 pr-14 truncate flex items-center gap-1.5">
+            {pinned && <span className="text-blue-500 text-xs shrink-0" title="Pinned">📌</span>}
             {project.name}
           </div>
           <div className="flex items-center gap-2 flex-wrap mt-1">
@@ -94,6 +110,13 @@ function ProjectCard({
 
       {!editing && (
         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); onPin(); }}
+            className={`p-1 rounded transition-colors text-xs ${pinned ? "text-blue-400 hover:text-blue-300" : "text-gray-500 hover:text-gray-200"}`}
+            title={pinned ? "Unpin project" : "Pin project to top"}
+          >
+            📌
+          </button>
           <button
             onClick={(e) => { e.stopPropagation(); setEditing(true); setDraft(project.name); }}
             className="p-1 text-gray-500 hover:text-gray-200 rounded transition-colors"
@@ -142,6 +165,7 @@ export default function Dashboard() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -149,6 +173,7 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((data) => setProjects(data))
       .finally(() => setLoading(false));
+    setPinnedIds(loadPinned());
   }, []);
 
   useEffect(() => {
@@ -165,6 +190,8 @@ export default function Dashboard() {
   const sortedFiltered = projects
     .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
+      const pa = pinnedIds.has(a.id), pb = pinnedIds.has(b.id);
+      if (pa !== pb) return pa ? -1 : 1;
       if (sort === "recent") {
         const la = getLastOpened(a.id), lb = getLastOpened(b.id);
         if (la || lb) return (lb || a.createdAt) - (la || b.createdAt);
@@ -175,6 +202,15 @@ export default function Dashboard() {
       if (sort === "az") return a.name.localeCompare(b.name);
       return b.name.localeCompare(a.name);
     });
+
+  const handlePin = useCallback((id: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      savePinned(next);
+      return next;
+    });
+  }, []);
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -401,6 +437,8 @@ export default function Dashboard() {
                 onRename={(name) => handleRename(p.id, name)}
                 onDelete={() => handleDelete(p.id)}
                 onDuplicate={() => handleDuplicate(p.id)}
+                pinned={pinnedIds.has(p.id)}
+                onPin={() => handlePin(p.id)}
               />
             ))}
           </div>
