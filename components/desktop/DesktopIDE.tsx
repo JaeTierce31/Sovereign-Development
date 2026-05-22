@@ -68,6 +68,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+  const editorInstanceRef = useRef<unknown>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [newFileName, setNewFileName] = useState("");
@@ -138,7 +140,10 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === "p") {
+      if (mod && e.key === "n") {
+        e.preventDefault();
+        setShowNewFile(true);
+      } else if (mod && e.key === "p") {
         e.preventDefault();
         setFinderOpen((v) => !v);
       } else if (mod && e.key === "`") {
@@ -546,6 +551,13 @@ function IDECore({ projectId }: { projectId: string }) {
                 value={activeFile.content ?? ""}
                 theme={prefs.theme}
                 onChange={handleChange}
+                onMount={(editor) => {
+                  editorInstanceRef.current = editor;
+                  setCursorPos({ line: 1, col: 1 });
+                  editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
+                    setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+                  });
+                }}
                 options={{
                   fontSize: prefs.fontSize,
                   tabSize: prefs.tabSize,
@@ -592,6 +604,22 @@ function IDECore({ projectId }: { projectId: string }) {
             />
           </div>
         )}
+
+        {/* Status bar */}
+        <div className="flex items-center justify-between px-3 py-0.5 bg-blue-900/40 border-t border-gray-800 text-xs text-gray-500 shrink-0 select-none">
+          <div className="flex items-center gap-3">
+            <span>{activeFile ? (activeFile.language ?? inferLanguage(activeFile.path)) : "—"}</span>
+            {activeFile && (
+              <span>{(activeFile.content ?? "").split("\n").length} lines</span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <span>UTF-8</span>
+            {activeFile && (
+              <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
+            )}
+          </div>
+        </div>
       </div>
       {finderOpen && (
         <FileFinder
@@ -702,6 +730,7 @@ function IDECore({ projectId }: { projectId: string }) {
             </div>
             <div className="space-y-2 text-sm">
               {[
+                ["⌘/Ctrl N", "New file"],
                 ["⌘/Ctrl P", "Quick file open"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
