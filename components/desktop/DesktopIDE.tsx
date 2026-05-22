@@ -75,6 +75,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mdPreview, setMdPreview] = useState(false);
+  const [htmlPreview, setHtmlPreview] = useState(false);
   const [inlineAiOpen, setInlineAiOpen] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const editorInstanceRef = useRef<unknown>(null);
@@ -263,6 +264,7 @@ function IDECore({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (activeFile && !activeFile.path.endsWith(".md")) setMdPreview(false);
+    if (activeFile && !activeFile.path.endsWith(".html")) setHtmlPreview(false);
   }, [activeFile]);
 
   const handleChange = useCallback(
@@ -555,6 +557,19 @@ function IDECore({ projectId }: { projectId: string }) {
                 ⊞ Preview
               </button>
             )}
+            {activeFile?.path.endsWith(".html") && (
+              <button
+                onClick={() => setHtmlPreview((v) => !v)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  htmlPreview
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Toggle HTML preview"
+              >
+                ⊞ Preview
+              </button>
+            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
@@ -595,8 +610,8 @@ function IDECore({ projectId }: { projectId: string }) {
 
         {/* Editor + AI panel */}
         <div className="flex min-h-0" style={{ flex: termOpen ? "0 0 60%" : "1 1 0" }}>
-          <div className={`flex min-w-0 ${mdPreview && activeFile?.path.endsWith(".md") ? "flex-1" : "flex-1"}`} style={{ minHeight: 0 }}>
-            <div className={mdPreview && activeFile?.path.endsWith(".md") ? "w-1/2 min-w-0" : "flex-1 min-w-0"}>
+          <div className="flex min-w-0 flex-1" style={{ minHeight: 0 }}>
+            <div className={(mdPreview && activeFile?.path.endsWith(".md")) || (htmlPreview && activeFile?.path.endsWith(".html")) ? "w-1/2 min-w-0" : "flex-1 min-w-0"}>
               {activeFile ? (
                 <Editor
                   key={activeFile.id}
@@ -641,6 +656,17 @@ function IDECore({ projectId }: { projectId: string }) {
             {mdPreview && activeFile?.path.endsWith(".md") && (
               <div className="w-1/2 border-l border-gray-700 min-w-0">
                 <MarkdownPreview content={activeFile.content ?? ""} />
+              </div>
+            )}
+            {htmlPreview && activeFile?.path.endsWith(".html") && (
+              <div className="w-1/2 border-l border-gray-700 min-w-0 bg-white">
+                <iframe
+                  key={activeFile.id}
+                  srcDoc={activeFile.content ?? ""}
+                  sandbox="allow-scripts"
+                  className="w-full h-full"
+                  title="HTML Preview"
+                />
               </div>
             )}
           </div>
