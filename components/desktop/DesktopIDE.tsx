@@ -873,6 +873,27 @@ function IDECore({ projectId }: { projectId: string }) {
             {activeFile && (
               <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
             )}
+            <button
+              onClick={() => setPrefs((p) => ({ ...p, wordWrap: p.wordWrap === "on" ? "off" : "on" }))}
+              className={`transition-colors ${prefs.wordWrap === "on" ? "text-blue-400 hover:text-blue-300" : "hover:text-white"}`}
+              title={`Word wrap: ${prefs.wordWrap} (click to toggle)`}
+            >
+              wrap
+            </button>
+            <button
+              onClick={() => setPrefs((p) => ({ ...p, minimap: !p.minimap }))}
+              className={`transition-colors ${prefs.minimap ? "text-blue-400 hover:text-blue-300" : "hover:text-white"}`}
+              title={`Minimap: ${prefs.minimap ? "on" : "off"} (click to toggle)`}
+            >
+              map
+            </button>
+            <button
+              onClick={() => setPrefs((p) => ({ ...p, theme: p.theme === "vs-dark" ? "light" : "vs-dark" }))}
+              className="hover:text-white transition-colors"
+              title={`Theme: ${prefs.theme} (click to toggle)`}
+            >
+              {prefs.theme === "vs-dark" ? "dark" : "light"}
+            </button>
             <span className="flex items-center gap-1">
               <button
                 onClick={() => setPrefs((p) => ({ ...p, fontSize: Math.max(10, p.fontSize - 1) }))}
