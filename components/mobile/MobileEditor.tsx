@@ -6,6 +6,8 @@ import MobileKeyboardRow from "./MobileKeyboardRow";
 import MobileAiSheet from "./MobileAiSheet";
 import MobileFileTree from "./MobileFileTree";
 
+const TABS_KEY = (id: string) => `peregrine:mobile-tabs:${id}`;
+
 interface ProjectFile {
   id: string;
   path: string;
@@ -40,11 +42,12 @@ export default function MobileEditor({
   const newFileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -62,10 +65,30 @@ export default function MobileEditor({
       .then((data: ProjectFile[] | null) => {
         if (!data) return;
         setFiles(data);
-        if (data.length > 0) setActiveId(data[0].id);
+        const validIds = new Set(data.map((f) => f.id));
+        let saved: { activeId: string | null; openTabs: string[] } | null = null;
+        try {
+          const raw = localStorage.getItem(TABS_KEY(projectId));
+          if (raw) saved = JSON.parse(raw);
+        } catch { /* ignore */ }
+        const restoredTabs = saved?.openTabs?.filter((id) => validIds.has(id)) ?? [];
+        const restoredActive =
+          saved?.activeId && validIds.has(saved.activeId) ? saved.activeId : restoredTabs[0] ?? null;
+        if (restoredTabs.length > 0) {
+          setOpenTabs(restoredTabs);
+          setActiveId(restoredActive);
+        } else if (data.length > 0) {
+          setOpenTabs([data[0].id]);
+          setActiveId(data[0].id);
+        }
       })
       .finally(() => setLoading(false));
   }, [projectId, router]);
+
+  useEffect(() => {
+    if (loading) return;
+    try { localStorage.setItem(TABS_KEY(projectId), JSON.stringify({ activeId, openTabs })); } catch { /* ignore */ }
+  }, [activeId, openTabs, projectId, loading]);
 
   useEffect(() => {
     if (showNewFile) setTimeout(() => newFileInputRef.current?.focus(), 50);
@@ -99,6 +122,24 @@ export default function MobileEditor({
     [activeId, projectId, activeFile, onFileChange]
   );
 
+  const openFile = useCallback((id: string) => {
+    setActiveId(id);
+    setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
+  }, []);
+
+  const closeTab = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t !== id);
+      if (activeId === id) {
+        const idx = prev.indexOf(id);
+        const fallback = next[idx] ?? next[idx - 1] ?? null;
+        setActiveId(fallback);
+      }
+      return next;
+    });
+  }, [activeId]);
+
   useEffect(() => {
     if (renamingId) setTimeout(() => renameInputRef.current?.focus(), 50);
   }, [renamingId]);
@@ -113,6 +154,7 @@ export default function MobileEditor({
   async function deleteFile(fileId: string) {
     if (!confirm("Delete this file?")) return;
     await fetch(`/api/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
+    setOpenTabs((prev) => prev.filter((id) => id !== fileId));
     setFiles((prev) => {
       const next = prev.filter((f) => f.id !== fileId);
       if (activeId === fileId) setActiveId(next[0]?.id ?? null);
@@ -149,7 +191,7 @@ export default function MobileEditor({
       if (res.ok) {
         const file: ProjectFile = await res.json();
         setFiles((prev) => [...prev, file]);
-        setActiveId(file.id);
+        openFile(file.id);
         setShowNewFile(false);
         setNewFileName("");
       }
@@ -200,6 +242,41 @@ export default function MobileEditor({
           </button>
         </div>
       </div>
+
+      {/* Tab strip */}
+      {openTabs.length > 0 && (
+        <div className="flex overflow-x-auto scrollbar-none bg-gray-950 border-b border-gray-700 shrink-0">
+          {openTabs.map((tabId) => {
+            const file = files.find((f) => f.id === tabId);
+            if (!file) return null;
+            const name = file.path.split("/").pop() ?? file.path;
+            const isActive = tabId === activeId;
+            return (
+              <div
+                key={tabId}
+                className={`flex items-center shrink-0 border-r border-gray-700 ${
+                  isActive ? "bg-gray-800 border-t-2 border-t-blue-500" : ""
+                }`}
+              >
+                <button
+                  onClick={() => openFile(tabId)}
+                  className={`px-2.5 py-1.5 text-xs whitespace-nowrap max-w-[110px] truncate ${
+                    isActive ? "text-white" : "text-gray-400 active:text-gray-200"
+                  }`}
+                >
+                  {name}
+                </button>
+                <button
+                  onClick={(e) => closeTab(tabId, e)}
+                  className="pr-2.5 text-gray-600 active:text-gray-300 text-sm leading-none"
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* New file sheet */}
       {showNewFile && (
@@ -276,7 +353,7 @@ export default function MobileEditor({
               ) : (
                 <>
                   <button
-                    onClick={() => { setActiveId(f.id); setShowPicker(false); }}
+                    onClick={() => { openFile(f.id); setShowPicker(false); }}
                     className={`flex-1 text-left px-4 py-2.5 text-sm truncate ${
                       f.id === activeId ? "text-blue-400" : "text-gray-300"
                     }`}
@@ -346,7 +423,7 @@ export default function MobileEditor({
         <MobileFileTree
           files={files}
           activeId={activeId}
-          onSelect={(id) => { setActiveId(id); }}
+          onSelect={(id) => { openFile(id); }}
           onClose={() => setShowFileTree(false)}
         />
       )}
