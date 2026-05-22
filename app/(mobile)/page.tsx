@@ -35,6 +35,10 @@ export default function MobileHome() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/projects")
@@ -46,6 +50,10 @@ export default function MobileHome() {
   useEffect(() => {
     if (showCreate) setTimeout(() => nameInputRef.current?.focus(), 50);
   }, [showCreate]);
+
+  useEffect(() => {
+    if (renamingId) setTimeout(() => renameInputRef.current?.focus(), 50);
+  }, [renamingId]);
 
   const sorted = projects
     .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
@@ -77,8 +85,41 @@ export default function MobileHome() {
     });
   }
 
+  async function handleRename(id: string) {
+    const trimmed = renameVal.trim();
+    const original = projects.find((p) => p.id === id)?.name ?? "";
+    setRenamingId(null);
+    setMenuOpenId(null);
+    if (!trimmed || trimmed === original) return;
+    const res = await fetch(`/api/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (res.ok) setProjects((prev) => prev.map((p) => p.id === id ? { ...p, name: trimmed } : p));
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Delete "${name}" and all its files?`)) return;
+    setMenuOpenId(null);
+    const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+    if (res.ok) setProjects((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  async function handleDuplicate(id: string) {
+    setMenuOpenId(null);
+    const res = await fetch(`/api/projects/${id}/duplicate`, { method: "POST" });
+    if (res.ok) {
+      const newProject: Project = await res.json();
+      setProjects((prev) => [newProject, ...prev]);
+    }
+  }
+
   return (
-    <div className="h-full w-full flex flex-col bg-peregrine-dark">
+    <div
+      className="h-full w-full flex flex-col bg-peregrine-dark"
+      onClick={() => { setMenuOpenId(null); setRenamingId(null); }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
         <div>
@@ -88,7 +129,7 @@ export default function MobileHome() {
           )}
         </div>
         <button
-          onClick={() => setShowCreate(true)}
+          onClick={(e) => { e.stopPropagation(); setShowCreate(true); }}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
         >
           <span className="text-base leading-none">+</span>
@@ -98,7 +139,7 @@ export default function MobileHome() {
 
       {/* Search + sort (show when there are projects) */}
       {!loading && projects.length > 1 && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 shrink-0">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800 shrink-0" onClick={(e) => e.stopPropagation()}>
           <div className="relative flex-1">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -135,7 +176,7 @@ export default function MobileHome() {
 
       {/* Create form */}
       {showCreate && (
-        <div className="border-b border-gray-800 shrink-0">
+        <div className="border-b border-gray-800 shrink-0" onClick={(e) => e.stopPropagation()}>
           <form onSubmit={handleCreate} className="px-3 pt-3 pb-2">
             <div className="flex gap-2 mb-2">
               <input
@@ -211,29 +252,84 @@ export default function MobileHome() {
         ) : (
           <ul className="divide-y divide-gray-800">
             {sorted.map((p) => (
-              <li key={p.id}>
-                <button
-                  onClick={() => { recordOpen(p.id); router.push(`/editor/${p.id}`); }}
-                  className="w-full text-left px-4 py-3.5 flex items-center justify-between active:bg-gray-800 transition-colors"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-sm font-medium truncate">{p.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-gray-600">
-                        {new Date(p.createdAt).toLocaleDateString()}
-                      </span>
-                      {p.fileCount !== undefined && (
-                        <span className="text-xs text-gray-700">
-                          {p.fileCount} {p.fileCount === 1 ? "file" : "files"}
-                        </span>
-                      )}
-                      {p.isPublic && (
-                        <span className="text-xs text-green-600">public</span>
-                      )}
+              <li key={p.id} onClick={(e) => e.stopPropagation()}>
+                {renamingId === p.id ? (
+                  <form
+                    className="px-4 py-3"
+                    onSubmit={(e) => { e.preventDefault(); handleRename(p.id); }}
+                  >
+                    <div className="flex gap-2">
+                      <input
+                        ref={renameInputRef}
+                        value={renameVal}
+                        onChange={(e) => setRenameVal(e.target.value)}
+                        onBlur={() => handleRename(p.id)}
+                        onKeyDown={(e) => { if (e.key === "Escape") { setRenamingId(null); setMenuOpenId(null); } }}
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-blue-500 rounded-lg text-white text-sm focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setRenamingId(null); setMenuOpenId(null); }}
+                        className="px-3 py-2 bg-gray-700 text-white text-sm rounded-lg"
+                      >
+                        ✕
+                      </button>
                     </div>
-                  </div>
-                  <span className="text-gray-600 ml-3">›</span>
-                </button>
+                  </form>
+                ) : (
+                  <>
+                    <div className="flex items-center">
+                      <button
+                        onClick={() => { recordOpen(p.id); router.push(`/editor/${p.id}`); }}
+                        className="flex-1 text-left px-4 py-3.5 active:bg-gray-800 transition-colors min-w-0"
+                      >
+                        <p className="text-white text-sm font-medium truncate">{p.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-gray-600">
+                            {new Date(p.createdAt).toLocaleDateString()}
+                          </span>
+                          {p.fileCount !== undefined && (
+                            <span className="text-xs text-gray-700">
+                              {p.fileCount} {p.fileCount === 1 ? "file" : "files"}
+                            </span>
+                          )}
+                          {p.isPublic && (
+                            <span className="text-xs text-green-600">public</span>
+                          )}
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === p.id ? null : p.id); }}
+                        className="px-4 py-3.5 text-gray-500 active:text-gray-200 transition-colors shrink-0 text-lg leading-none"
+                        aria-label="Project actions"
+                      >
+                        ⋮
+                      </button>
+                    </div>
+                    {menuOpenId === p.id && (
+                      <div className="flex border-t border-gray-700">
+                        <button
+                          onClick={() => { setRenamingId(p.id); setRenameVal(p.name); }}
+                          className="flex-1 py-2.5 text-xs text-gray-300 active:bg-gray-700 transition-colors"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => handleDuplicate(p.id)}
+                          className="flex-1 py-2.5 text-xs text-gray-300 active:bg-gray-700 transition-colors border-l border-gray-700"
+                        >
+                          Duplicate
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p.id, p.name)}
+                          className="flex-1 py-2.5 text-xs text-red-400 active:bg-gray-700 transition-colors border-l border-gray-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </li>
             ))}
           </ul>
