@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 const FILE_ICONS: Record<string, { label: string; className: string }> = {
   ts:   { label: "TS",  className: "text-blue-400" },
@@ -92,6 +92,13 @@ function buildTree(files: ProjectFile[]): TreeNode[] {
   return root;
 }
 
+interface ContextMenuState {
+  fileId: string;
+  filePath: string;
+  x: number;
+  y: number;
+}
+
 interface FileTreeProps {
   files: ProjectFile[];
   activeFileId: string | null;
@@ -123,11 +130,13 @@ function TreeNodeRow({
   onDeleteFile,
   expandedFolders,
   toggleFolder,
+  onContextMenu,
 }: FileTreeProps & {
   node: TreeNode;
   depth: number;
   expandedFolders: Set<string>;
   toggleFolder: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, fileId: string, filePath: string) => void;
 }) {
   const indent = depth * 12;
 
@@ -162,6 +171,7 @@ function TreeNodeRow({
             onDeleteFile={onDeleteFile}
             expandedFolders={expandedFolders}
             toggleFolder={toggleFolder}
+            onContextMenu={onContextMenu}
           />
         ))}
       </>
@@ -198,6 +208,7 @@ function TreeNodeRow({
     <div
       className={`group flex items-center ${isActive ? "bg-gray-700" : "hover:bg-gray-800"}`}
       style={{ paddingLeft: `${8 + indent}px` }}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file.id, file.path); }}
     >
       {isDirty && (
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mr-1" title="Unsaved" />
@@ -227,6 +238,9 @@ function TreeNodeRow({
 export default function FileTree(props: FileTreeProps) {
   const { files } = props;
   const tree = buildTree(files);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [copiedPath, setCopiedPath] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Auto-expand folders that contain the active file
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
@@ -257,6 +271,25 @@ export default function FileTree(props: FileTreeProps) {
     });
   }, [props.activeFileId, files]);
 
+  // Close context menu on outside click or Escape
+  useEffect(() => {
+    if (!contextMenu) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setContextMenu(null);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu]);
+
   function toggleFolder(path: string) {
     setExpandedFolders((prev) => {
       const next = new Set(prev);
@@ -266,10 +299,17 @@ export default function FileTree(props: FileTreeProps) {
     });
   }
 
+  const handleContextMenu = useCallback((e: React.MouseEvent, fileId: string, filePath: string) => {
+    setContextMenu({ fileId, filePath, x: e.clientX, y: e.clientY });
+    setCopiedPath(false);
+  }, []);
+
   if (files.length === 0) return null;
 
+  const ITEM = "w-full text-left px-3 py-1.5 text-xs hover:bg-gray-700 transition-colors";
+
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto relative">
       {tree.map((node) => (
         <TreeNodeRow
           key={node.fullPath}
@@ -278,8 +318,50 @@ export default function FileTree(props: FileTreeProps) {
           {...props}
           expandedFolders={expandedFolders}
           toggleFolder={toggleFolder}
+          onContextMenu={handleContextMenu}
         />
       ))}
+
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl py-1 w-44 text-gray-300"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className={ITEM}
+            onClick={() => { props.onOpenFile(contextMenu.fileId); setContextMenu(null); }}
+          >
+            Open
+          </button>
+          <button
+            className={ITEM}
+            onClick={() => {
+              props.onStartRename(contextMenu.fileId, contextMenu.filePath);
+              setContextMenu(null);
+            }}
+          >
+            Rename
+          </button>
+          <button
+            className={`${ITEM} ${copiedPath ? "text-green-400" : ""}`}
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.filePath).catch(() => {});
+              setCopiedPath(true);
+              setTimeout(() => { setCopiedPath(false); setContextMenu(null); }, 1200);
+            }}
+          >
+            {copiedPath ? "✓ Copied!" : "Copy Path"}
+          </button>
+          <div className="border-t border-gray-700 my-1" />
+          <button
+            className={`${ITEM} text-red-400 hover:bg-red-900/30`}
+            onClick={(e) => { props.onDeleteFile(contextMenu.fileId, e); setContextMenu(null); }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
