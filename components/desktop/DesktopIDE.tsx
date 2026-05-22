@@ -65,6 +65,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [prefs, setPrefs] = useState<EditorPrefs>(DEFAULT_PREFS);
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set());
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
@@ -154,6 +156,10 @@ function IDECore({ projectId }: { projectId: string }) {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: value }),
+          }).then(() => {
+            setSaveStatus("saved");
+            if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+            saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
           });
         }
       } else if (mod && e.key === "w") {
@@ -197,6 +203,7 @@ function IDECore({ projectId }: { projectId: string }) {
         prev.map((f) => (f.id === activeFileId ? { ...f, content: value } : f))
       );
       setDirtyTabs((prev) => { const next = new Set(prev); next.add(activeFileId); return next; });
+      setSaveStatus("saving");
       pendingSave.current = { id: activeFileId, value };
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
@@ -206,6 +213,10 @@ function IDECore({ projectId }: { projectId: string }) {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: value }),
+        }).then(() => {
+          setSaveStatus("saved");
+          if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+          saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
         });
       }, 800);
     },
@@ -454,7 +465,11 @@ function IDECore({ projectId }: { projectId: string }) {
 
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
-          <span className="truncate text-xs text-gray-500">{activeFile?.path ?? "No file selected"}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate text-xs text-gray-500">{activeFile?.path ?? "No file selected"}</span>
+            {saveStatus === "saving" && <span className="text-xs text-gray-600 shrink-0">Saving…</span>}
+            {saveStatus === "saved" && <span className="text-xs text-green-600 shrink-0">Saved ✓</span>}
+          </div>
           <div className="flex items-center gap-2 shrink-0">
             {isRunnable && (
               <button
