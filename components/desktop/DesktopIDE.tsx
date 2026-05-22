@@ -68,7 +68,10 @@ function IDECore({ projectId }: { projectId: string }) {
   const [shareToast, setShareToast] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState("");
   const newFileInputRef = useRef<HTMLInputElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
 
@@ -122,6 +125,10 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (showNewFile) setTimeout(() => newFileInputRef.current?.focus(), 0);
   }, [showNewFile]);
+
+  useEffect(() => {
+    if (renamingId) setTimeout(() => { renameInputRef.current?.select(); }, 0);
+  }, [renamingId]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -235,6 +242,22 @@ function IDECore({ projectId }: { projectId: string }) {
     setFiles((prev) => prev.filter((f) => f.id !== fileId));
   }
 
+  async function commitRename(fileId: string) {
+    const trimmed = renameVal.trim();
+    const original = files.find((f) => f.id === fileId)?.path ?? "";
+    setRenamingId(null);
+    if (!trimmed || trimmed === original) return;
+    const res = await fetch(`/api/projects/${projectId}/files/${fileId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: trimmed }),
+    });
+    if (res.ok) {
+      const updated: ProjectFile = await res.json();
+      setFiles((prev) => prev.map((f) => f.id === fileId ? updated : f));
+    }
+  }
+
   const activeExt = activeFile?.path.split(".").pop() ?? "";
   const isRunnable = RUNNABLE_EXTS.has(activeExt);
 
@@ -321,21 +344,44 @@ function IDECore({ projectId }: { projectId: string }) {
                   activeFileId === file.id ? "bg-gray-700" : "hover:bg-gray-800"
                 }`}
               >
-                <button
-                  onClick={() => openFile(file.id)}
-                  className={`flex-1 text-left px-4 py-1.5 text-sm truncate ${
-                    activeFileId === file.id ? "text-white" : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  {file.path}
-                </button>
-                <button
-                  onClick={(e) => deleteFile(file.id, e)}
-                  className="px-2 py-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs shrink-0"
-                  title="Delete file"
-                >
-                  ×
-                </button>
+                {renamingId === file.id ? (
+                  <form
+                    className="flex-1 px-2 py-0.5"
+                    onSubmit={(e) => { e.preventDefault(); commitRename(file.id); }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      ref={renameInputRef}
+                      value={renameVal}
+                      onChange={(e) => setRenameVal(e.target.value)}
+                      onBlur={() => commitRename(file.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") { setRenamingId(null); e.stopPropagation(); }
+                      }}
+                      className="w-full px-1.5 py-0.5 text-xs bg-gray-800 border border-blue-500 rounded text-white focus:outline-none"
+                    />
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => openFile(file.id)}
+                    onDoubleClick={() => { setRenamingId(file.id); setRenameVal(file.path); }}
+                    className={`flex-1 text-left px-4 py-1.5 text-sm truncate ${
+                      activeFileId === file.id ? "text-white" : "text-gray-400 hover:text-white"
+                    }`}
+                    title="Double-click to rename"
+                  >
+                    {file.path}
+                  </button>
+                )}
+                {renamingId !== file.id && (
+                  <button
+                    onClick={(e) => deleteFile(file.id, e)}
+                    className="px-2 py-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs shrink-0"
+                    title="Delete file"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             ))
           )}
