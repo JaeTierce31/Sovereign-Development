@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import MobileKeyboardRow from "./MobileKeyboardRow";
 import MobileAiSheet from "./MobileAiSheet";
+import MobileFileTree from "./MobileFileTree";
 
 interface ProjectFile {
   id: string;
@@ -48,6 +49,7 @@ export default function MobileEditor({
   const [renameVal, setRenameVal] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [showFileTree, setShowFileTree] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
   const pickerSearchRef = useRef<HTMLInputElement>(null);
 
@@ -182,6 +184,13 @@ export default function MobileEditor({
               ✦
             </button>
           )}
+          <button
+            onClick={() => { setShowFileTree(true); setShowPicker(false); setShowNewFile(false); }}
+            className="text-gray-500 active:text-gray-200 text-sm leading-none px-1.5 py-1"
+            title="File tree"
+          >
+            ☰
+          </button>
           <button
             onClick={() => { setShowNewFile((v) => !v); setShowPicker(false); }}
             className="text-gray-500 active:text-gray-200 text-lg leading-none px-1.5"
@@ -332,6 +341,15 @@ export default function MobileEditor({
       </div>
 
       <MobileKeyboardRow editorRef={editorRef} />
+
+      {showFileTree && (
+        <MobileFileTree
+          files={files}
+          activeId={activeId}
+          onSelect={(id) => { setActiveId(id); }}
+          onClose={() => setShowFileTree(false)}
+        />
+      )}
 
       {aiOpen && activeFile && (
         <MobileAiSheet
