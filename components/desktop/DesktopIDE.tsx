@@ -10,6 +10,7 @@ import AiPanel from "./AiPanel";
 import ExecutionPanel from "./ExecutionPanel";
 import FileFinder from "./FileFinder";
 import GlobalSearch from "./GlobalSearch";
+import FileTree from "./FileTree";
 
 interface EditorPrefs {
   fontSize: number;
@@ -376,59 +377,23 @@ function IDECore({ projectId }: { projectId: string }) {
           </form>
         )}
 
-        <div className="flex-1 overflow-auto">
-          {loading ? (
-            <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
-          ) : (
-            files.map((file) => (
-              <div
-                key={file.id}
-                className={`group flex items-center ${
-                  activeFileId === file.id ? "bg-gray-700" : "hover:bg-gray-800"
-                }`}
-              >
-                {renamingId === file.id ? (
-                  <form
-                    className="flex-1 px-2 py-0.5"
-                    onSubmit={(e) => { e.preventDefault(); commitRename(file.id); }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      ref={renameInputRef}
-                      value={renameVal}
-                      onChange={(e) => setRenameVal(e.target.value)}
-                      onBlur={() => commitRename(file.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") { setRenamingId(null); e.stopPropagation(); }
-                      }}
-                      className="w-full px-1.5 py-0.5 text-xs bg-gray-800 border border-blue-500 rounded text-white focus:outline-none"
-                    />
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => openFile(file.id)}
-                    onDoubleClick={() => { setRenamingId(file.id); setRenameVal(file.path); }}
-                    className={`flex-1 text-left px-4 py-1.5 text-sm truncate ${
-                      activeFileId === file.id ? "text-white" : "text-gray-400 hover:text-white"
-                    }`}
-                    title="Double-click to rename"
-                  >
-                    {file.path}
-                  </button>
-                )}
-                {renamingId !== file.id && (
-                  <button
-                    onClick={(e) => deleteFile(file.id, e)}
-                    className="px-2 py-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs shrink-0"
-                    title="Delete file"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+        {loading ? (
+          <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
+        ) : (
+          <FileTree
+            files={files}
+            activeFileId={activeFileId}
+            dirtyTabs={dirtyTabs}
+            renamingId={renamingId}
+            renameVal={renameVal}
+            renameInputRef={renameInputRef}
+            onOpenFile={openFile}
+            onStartRename={(id, path) => { setRenamingId(id); setRenameVal(path); }}
+            onRenameChange={setRenameVal}
+            onCommitRename={commitRename}
+            onDeleteFile={deleteFile}
+          />
+        )}
       </div>
       )} {/* end sidebarOpen */}
 
