@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Editor from "@monaco-editor/react";
+import JSZip from "jszip";
 import { useParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 
@@ -38,6 +39,7 @@ export default function SharePage() {
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "found" | "notfound">("loading");
   const [forking, setForking] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     fetch(`/api/share/${projectId}`)
@@ -72,6 +74,23 @@ export default function SharePage() {
     }
   }
 
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const zip = new JSZip();
+      for (const f of files) zip.file(f.path, f.content ?? "");
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project?.name ?? "project"}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
   if (status === "loading") {
@@ -102,6 +121,16 @@ export default function SharePage() {
           <span className="px-1.5 py-0.5 text-xs bg-gray-700 text-gray-400 rounded">Read-only</span>
         </div>
         <div className="flex items-center gap-2">
+          {files.length > 0 && (
+            <button
+              onClick={handleDownload}
+              disabled={downloading}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs rounded-lg transition-colors"
+              title="Download project as ZIP"
+            >
+              {downloading ? "Zipping…" : "↓ ZIP"}
+            </button>
+          )}
           {isLoaded && (
             <button
               onClick={handleFork}
@@ -116,15 +145,17 @@ export default function SharePage() {
 
       <div className="flex flex-1 min-h-0">
         <div className="w-48 bg-gray-900 border-r border-gray-700 flex flex-col shrink-0">
-          <div className="px-3 py-2 border-b border-gray-700">
+          <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Files</span>
+            {files.length > 0 && <span className="text-xs text-gray-600">{files.length}</span>}
           </div>
           <div className="flex-1 overflow-auto">
             {files.map((file) => (
               <button
                 key={file.id}
                 onClick={() => setActiveFileId(file.id)}
-                className={`w-full text-left px-4 py-1.5 text-sm truncate transition-colors ${
+                title={file.path}
+                className={`w-full text-left px-4 py-1.5 text-xs truncate transition-colors ${
                   activeFileId === file.id
                     ? "bg-gray-700 text-white"
                     : "text-gray-400 hover:text-white hover:bg-gray-800"
