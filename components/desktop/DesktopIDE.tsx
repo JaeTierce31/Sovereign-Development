@@ -93,6 +93,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
   const [dropTarget, setDropTarget] = useState(false);
   const [formatError, setFormatError] = useState(false);
+  const [gotoLineOpen, setGotoLineOpen] = useState(false);
+  const [gotoLineVal, setGotoLineVal] = useState("");
+  const gotoLineRef = useRef<HTMLInputElement>(null);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -179,6 +182,10 @@ function IDECore({ projectId }: { projectId: string }) {
     if (renamingId) setTimeout(() => { renameInputRef.current?.select(); }, 0);
   }, [renamingId]);
 
+  useEffect(() => {
+    if (gotoLineOpen) setTimeout(() => { gotoLineRef.current?.select(); }, 0);
+  }, [gotoLineOpen]);
+
   // Global keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -245,8 +252,13 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.key === ",") {
         e.preventDefault();
         setPrefsOpen((v) => !v);
+      } else if (mod && e.key === "g") {
+        e.preventDefault();
+        setGotoLineOpen(true);
+        setGotoLineVal(String(cursorPos.line));
       } else if (e.key === "Escape") {
-        if (inlineAiOpen) setInlineAiOpen(false);
+        if (gotoLineOpen) setGotoLineOpen(false);
+        else if (inlineAiOpen) setInlineAiOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -260,7 +272,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -759,7 +771,18 @@ function IDECore({ projectId }: { projectId: string }) {
           <div className="flex items-center gap-3">
             <span>{activeFile ? (activeFile.language ?? inferLanguage(activeFile.path)) : "—"}</span>
             {activeFile && (
-              <span>{(activeFile.content ?? "").split("\n").length} lines</span>
+              <button
+                onClick={() => { setGotoLineOpen(true); setGotoLineVal(String(cursorPos.line)); }}
+                className="hover:text-white transition-colors"
+                title="Go to line (⌘/Ctrl G)"
+              >
+                {(activeFile.content ?? "").split("\n").length} lines
+              </button>
+            )}
+            {activeFile && (activeFile.content ?? "").trim() && (
+              <span title="Word count">
+                {(activeFile.content ?? "").trim().split(/\s+/).length} words
+              </span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -783,6 +806,56 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         </div>
       </div>
+      {gotoLineOpen && activeFile && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setGotoLineOpen(false)}
+        >
+          <div
+            className="absolute top-16 right-4 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl overflow-hidden w-72"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const lineNum = parseInt(gotoLineVal, 10);
+                const ed = editorInstanceRef.current as {
+                  revealLineInCenter?: (n: number) => void;
+                  setPosition?: (p: { lineNumber: number; column: number }) => void;
+                  focus?: () => void;
+                  getModel?: () => { getLineCount: () => number } | null;
+                } | null;
+                if (!ed || !lineNum || isNaN(lineNum)) { setGotoLineOpen(false); return; }
+                const total = ed.getModel?.()?.getLineCount() ?? 1;
+                const clamped = Math.max(1, Math.min(total, lineNum));
+                ed.revealLineInCenter?.(clamped);
+                ed.setPosition?.({ lineNumber: clamped, column: 1 });
+                ed.focus?.();
+                setGotoLineOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-2"
+            >
+              <span className="text-xs text-gray-400 shrink-0">Go to line</span>
+              <input
+                ref={gotoLineRef}
+                value={gotoLineVal}
+                onChange={(e) => setGotoLineVal(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") setGotoLineOpen(false); }}
+                type="number"
+                min={1}
+                className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 focus:border-blue-500 rounded text-white text-sm focus:outline-none w-0"
+                placeholder="line number"
+              />
+              <button
+                type="submit"
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors shrink-0"
+              >
+                Go
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
       {finderOpen && (
         <FileFinder
           files={files}
@@ -899,6 +972,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl K", "Inline AI command"],
                 ["⌘/Ctrl N", "New file"],
                 ["⌘/Ctrl P", "Quick file open"],
+                ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["⌘/Ctrl PageDown", "Next tab"],
