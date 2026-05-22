@@ -27,9 +27,11 @@ function inferLang(path: string) {
 export default function MobileEditor({
   projectId,
   onFileChange,
+  onActiveFileChange,
 }: {
   projectId: string;
   onFileChange?: (content: string, language: string) => void;
+  onActiveFileChange?: (path: string) => void;
 }) {
   const router = useRouter();
   const editorRef = useRef<unknown>(null);
@@ -70,8 +72,9 @@ export default function MobileEditor({
   useEffect(() => {
     if (activeFile) {
       onFileChange?.(activeFile.content ?? "", activeFile.language ?? inferLang(activeFile.path));
+      onActiveFileChange?.(activeFile.path);
     }
-  }, [activeFile, onFileChange]);
+  }, [activeFile, onFileChange, onActiveFileChange]);
 
   const handleChange = useCallback(
     (value: string | undefined) => {

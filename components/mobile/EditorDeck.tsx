@@ -11,6 +11,7 @@ export default function EditorDeck({ projectId }: { projectId: string }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [activeFileContent, setActiveFileContent] = useState("");
   const [activeFileLang, setActiveFileLang] = useState("plaintext");
+  const [activeFilePath, setActiveFilePath] = useState<string | undefined>(undefined);
 
   const handleDragEnd = (_: unknown, info: { offset: { y: number } }) => {
     if (info.offset.y > 50 && activePane === "editor") setActivePane("terminal");
@@ -37,6 +38,7 @@ export default function EditorDeck({ projectId }: { projectId: string }) {
                 setActiveFileContent(content);
                 setActiveFileLang(lang);
               }}
+              onActiveFileChange={setActiveFilePath}
             />
           </motion.div>
         )}
@@ -51,7 +53,7 @@ export default function EditorDeck({ projectId }: { projectId: string }) {
             onDragEnd={handleDragEnd}
             className="absolute inset-0 z-10 bg-gray-950"
           >
-            <MobileTerminal projectId={projectId} />
+            <MobileTerminal projectId={projectId} activeFilePath={activeFilePath} />
           </motion.div>
         )}
       </AnimatePresence>
