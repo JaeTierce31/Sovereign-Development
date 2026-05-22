@@ -41,6 +41,9 @@ export default function MobileEditor({
   const [newFileName, setNewFileName] = useState("");
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -86,6 +89,36 @@ export default function MobileEditor({
     },
     [activeId, projectId, activeFile, onFileChange]
   );
+
+  useEffect(() => {
+    if (renamingId) setTimeout(() => renameInputRef.current?.focus(), 50);
+  }, [renamingId]);
+
+  async function deleteFile(fileId: string) {
+    if (!confirm("Delete this file?")) return;
+    await fetch(`/api/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
+    setFiles((prev) => {
+      const next = prev.filter((f) => f.id !== fileId);
+      if (activeId === fileId) setActiveId(next[0]?.id ?? null);
+      return next;
+    });
+  }
+
+  async function commitRename(fileId: string) {
+    const trimmed = renameVal.trim();
+    const original = files.find((f) => f.id === fileId)?.path ?? "";
+    setRenamingId(null);
+    if (!trimmed || trimmed === original) return;
+    const res = await fetch(`/api/projects/${projectId}/files/${fileId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: trimmed }),
+    });
+    if (res.ok) {
+      const updated: ProjectFile = await res.json();
+      setFiles((prev) => prev.map((f) => f.id === fileId ? updated : f));
+    }
+  }
 
   async function createFile(e: React.FormEvent) {
     e.preventDefault();
@@ -168,19 +201,58 @@ export default function MobileEditor({
 
       {/* File picker overlay */}
       {showPicker && (
-        <div className="absolute inset-x-0 top-10 z-50 bg-gray-900 border-b border-gray-700 max-h-48 overflow-auto shadow-xl">
+        <div className="absolute inset-x-0 top-10 z-50 bg-gray-900 border-b border-gray-700 max-h-64 overflow-auto shadow-xl">
           {files.length === 0 ? (
             <div className="px-4 py-3 text-sm text-gray-500">No files yet</div>
           ) : files.map((f) => (
-            <button
+            <div
               key={f.id}
-              onClick={() => { setActiveId(f.id); setShowPicker(false); }}
-              className={`w-full text-left px-4 py-2.5 text-sm border-b border-gray-800 last:border-0 ${
-                f.id === activeId ? "text-blue-400 bg-gray-800" : "text-gray-300"
+              className={`flex items-center border-b border-gray-800 last:border-0 ${
+                f.id === activeId ? "bg-gray-800" : ""
               }`}
             >
-              {f.path}
-            </button>
+              {renamingId === f.id ? (
+                <form
+                  className="flex-1 flex items-center gap-2 px-3 py-1.5"
+                  onSubmit={(e) => { e.preventDefault(); commitRename(f.id); }}
+                >
+                  <input
+                    ref={renameInputRef}
+                    value={renameVal}
+                    onChange={(e) => setRenameVal(e.target.value)}
+                    onBlur={() => commitRename(f.id)}
+                    onKeyDown={(e) => { if (e.key === "Escape") setRenamingId(null); }}
+                    className="flex-1 px-2 py-1 text-xs bg-gray-700 border border-blue-500 rounded text-white focus:outline-none"
+                  />
+                  <button type="button" onClick={() => setRenamingId(null)} className="text-gray-500 text-xs px-1">✕</button>
+                </form>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setActiveId(f.id); setShowPicker(false); }}
+                    className={`flex-1 text-left px-4 py-2.5 text-sm truncate ${
+                      f.id === activeId ? "text-blue-400" : "text-gray-300"
+                    }`}
+                  >
+                    {f.path}
+                  </button>
+                  <button
+                    onClick={() => { setRenamingId(f.id); setRenameVal(f.path); }}
+                    className="px-3 py-2.5 text-gray-500 active:text-gray-200 text-xs shrink-0"
+                    title="Rename"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    onClick={() => deleteFile(f.id)}
+                    className="px-3 py-2.5 text-gray-500 active:text-red-400 text-sm shrink-0"
+                    title="Delete"
+                  >
+                    ×
+                  </button>
+                </>
+              )}
+            </div>
           ))}
         </div>
       )}
