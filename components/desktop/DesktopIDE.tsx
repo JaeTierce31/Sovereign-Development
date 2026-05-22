@@ -12,6 +12,7 @@ import FileFinder from "./FileFinder";
 import GlobalSearch from "./GlobalSearch";
 import FileTree from "./FileTree";
 import MarkdownPreview from "./MarkdownPreview";
+import InlineAiCommand from "./InlineAiCommand";
 
 interface EditorPrefs {
   fontSize: number;
@@ -71,6 +72,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mdPreview, setMdPreview] = useState(false);
+  const [inlineAiOpen, setInlineAiOpen] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const editorInstanceRef = useRef<unknown>(null);
   const [isPublic, setIsPublic] = useState(false);
@@ -143,7 +145,10 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === "n") {
+      if (mod && e.key === "k") {
+        e.preventDefault();
+        if (activeFileId) setInlineAiOpen((v) => !v);
+      } else if (mod && e.key === "n") {
         e.preventDefault();
         setShowNewFile(true);
       } else if (mod && e.key === "p") {
@@ -187,7 +192,8 @@ function IDECore({ projectId }: { projectId: string }) {
         e.preventDefault();
         setPrefsOpen((v) => !v);
       } else if (e.key === "Escape") {
-        if (prefsOpen) setPrefsOpen(false);
+        if (inlineAiOpen) setInlineAiOpen(false);
+        else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
         else if (shortcutsOpen) setShortcutsOpen(false);
@@ -200,7 +206,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -486,6 +492,19 @@ function IDECore({ projectId }: { projectId: string }) {
                 ⊞ Preview
               </button>
             )}
+            {activeFile?.path.endsWith(".md") && (
+              <button
+                onClick={() => setMdPreview((v) => !v)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  mdPreview
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Toggle markdown preview"
+              >
+                ⊞ Preview
+              </button>
+            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
@@ -721,6 +740,7 @@ function IDECore({ projectId }: { projectId: string }) {
             </div>
             <div className="space-y-2 text-sm">
               {[
+                ["⌘/Ctrl K", "Inline AI command"],
                 ["⌘/Ctrl N", "New file"],
                 ["⌘/Ctrl P", "Quick file open"],
                 ["⌘/Ctrl Shift F", "Search across files"],
@@ -739,6 +759,13 @@ function IDECore({ projectId }: { projectId: string }) {
             </div>
           </div>
         </div>
+      )}
+      {inlineAiOpen && activeFile && (
+        <InlineAiCommand
+          language={activeFile.language ?? inferLanguage(activeFile.path)}
+          editorRef={editorInstanceRef}
+          onClose={() => setInlineAiOpen(false)}
+        />
       )}
       {shareToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 bg-gray-800 border border-gray-600 rounded-xl shadow-xl text-sm text-white z-50">
