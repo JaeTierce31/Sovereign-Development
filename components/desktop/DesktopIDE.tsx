@@ -100,6 +100,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [gotoLineOpen, setGotoLineOpen] = useState(false);
   const [gotoLineVal, setGotoLineVal] = useState("");
   const gotoLineRef = useRef<HTMLInputElement>(null);
+  const dragTabIndex = useRef<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -563,18 +565,46 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Tab bar */}
         {openTabs.length > 0 && (
           <div className="flex items-end bg-gray-950 border-b border-gray-700 overflow-x-auto shrink-0" style={{ minHeight: "32px" }}>
-            {openTabs.map((tabId) => {
+            {openTabs.map((tabId, tabIdx) => {
               const tabFile = files.find((f) => f.id === tabId);
               if (!tabFile) return null;
               const isActive = tabId === activeFileId;
+              const isDragOver = dragOverIndex === tabIdx && dragTabIndex.current !== null && dragTabIndex.current !== tabIdx;
               return (
                 <div
                   key={tabId}
+                  draggable
+                  onDragStart={(e) => {
+                    dragTabIndex.current = tabIdx;
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dragTabIndex.current !== null && dragTabIndex.current !== tabIdx) {
+                      setDragOverIndex(tabIdx);
+                    }
+                  }}
+                  onDragLeave={() => setDragOverIndex(null)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const from = dragTabIndex.current;
+                    if (from === null || from === tabIdx) { setDragOverIndex(null); return; }
+                    setOpenTabs((prev) => {
+                      const next = [...prev];
+                      const [moved] = next.splice(from, 1);
+                      next.splice(tabIdx, 0, moved);
+                      return next;
+                    });
+                    dragTabIndex.current = null;
+                    setDragOverIndex(null);
+                  }}
+                  onDragEnd={() => { dragTabIndex.current = null; setDragOverIndex(null); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-r border-gray-700 cursor-pointer shrink-0 select-none transition-colors ${
                     isActive
                       ? "bg-gray-900 text-white border-t-2 border-t-blue-500"
                       : "bg-gray-950 text-gray-400 hover:text-gray-200 hover:bg-gray-900 border-t-2 border-t-transparent"
-                  }`}
+                  } ${isDragOver ? "border-l-2 border-l-blue-400" : ""}`}
                   style={{ maxWidth: "180px" }}
                   onClick={() => setActiveFileId(tabId)}
                 >
