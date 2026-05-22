@@ -165,6 +165,7 @@ function IDECore({ projectId }: { projectId: string }) {
           setIsPublic(d.isPublic ?? false);
         }
       });
+    try { localStorage.setItem(`peregrine:last-opened:${projectId}`, Date.now().toString()); } catch { /* ignore */ }
   }, [projectId]);
 
   useEffect(() => {

@@ -121,7 +121,14 @@ function ProjectCard({
   );
 }
 
-type SortKey = "newest" | "oldest" | "az" | "za";
+type SortKey = "recent" | "newest" | "oldest" | "az" | "za";
+
+function getLastOpened(id: string): number {
+  try {
+    const val = localStorage.getItem(`peregrine:last-opened:${id}`);
+    return val ? parseInt(val, 10) : 0;
+  } catch { return 0; }
+}
 
 export default function Dashboard() {
   const router = useRouter();
@@ -134,7 +141,7 @@ export default function Dashboard() {
   const [importState, setImportState] = useState<ImportState>("idle");
   const importInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortKey>("newest");
+  const [sort, setSort] = useState<SortKey>("recent");
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -158,6 +165,11 @@ export default function Dashboard() {
   const sortedFiltered = projects
     .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
+      if (sort === "recent") {
+        const la = getLastOpened(a.id), lb = getLastOpened(b.id);
+        if (la || lb) return (lb || a.createdAt) - (la || b.createdAt);
+        return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+      }
       if (sort === "newest") return (b.createdAt ?? 0) - (a.createdAt ?? 0);
       if (sort === "oldest") return (a.createdAt ?? 0) - (b.createdAt ?? 0);
       if (sort === "az") return a.name.localeCompare(b.name);
@@ -292,6 +304,7 @@ export default function Dashboard() {
               onChange={(e) => setSort(e.target.value as SortKey)}
               className="px-2 py-1.5 bg-gray-900 border border-gray-700 rounded-lg text-sm text-gray-400 focus:outline-none focus:border-blue-500"
             >
+              <option value="recent">Recently opened</option>
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
               <option value="az">A → Z</option>
