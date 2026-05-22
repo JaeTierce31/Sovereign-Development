@@ -9,12 +9,13 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const userKey = req.headers.get('X-User-Anthropic-Key') ?? '';
+  const anthropicKey = userKey || process.env.ANTHROPIC_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
 
   if (!anthropicKey && !groqKey) {
     return NextResponse.json(
-      { error: 'AI not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY.' },
+      { error: 'AI not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY, or set your own key in Settings.' },
       { status: 503 }
     );
   }

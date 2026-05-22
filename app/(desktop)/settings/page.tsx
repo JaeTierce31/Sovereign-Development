@@ -3,6 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { Suspense } from "react";
+import { getUserApiKey, setUserApiKey } from "@/lib/userApiKey";
 
 interface BillingStatus {
   tier: string;
@@ -18,13 +19,29 @@ function SettingsContent() {
   const [loading, setLoading] = useState(true);
   const [portalPending, startPortal] = useTransition();
   const [checkoutPending, startCheckout] = useTransition();
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     fetch("/api/billing/status")
       .then((r) => r.json())
       .then(setStatus)
       .finally(() => setLoading(false));
+    setApiKey(getUserApiKey());
   }, []);
+
+  function saveApiKey(e: React.FormEvent) {
+    e.preventDefault();
+    setUserApiKey(apiKey);
+    setApiKeySaved(true);
+    setTimeout(() => setApiKeySaved(false), 2000);
+  }
+
+  function clearApiKey() {
+    setUserApiKey("");
+    setApiKey("");
+  }
 
   function openPortal() {
     startPortal(async () => {
@@ -114,6 +131,60 @@ function SettingsContent() {
               </button>
             </div>
           )}
+        </section>
+
+        {/* AI */}
+        <section className="mt-6 p-5 bg-gray-900 border border-gray-700 rounded-xl">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-1">AI Assistant</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Provide your own Anthropic API key to enable AI features. The key is stored only in your browser and sent directly to Anthropic — never stored on our servers.
+          </p>
+
+          <form onSubmit={saveApiKey} className="space-y-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5">Anthropic API Key</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showKey ? "text" : "password"}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="sk-ant-…"
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 focus:border-blue-500 rounded-lg text-white text-sm font-mono focus:outline-none pr-16"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey((v) => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    {showKey ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+                >
+                  {apiKeySaved ? "✓ Saved" : "Save"}
+                </button>
+                {apiKey && (
+                  <button
+                    type="button"
+                    onClick={clearApiKey}
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {getUserApiKey() && (
+              <div className="flex items-center gap-2 text-xs text-green-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                API key set — AI features are enabled
+              </div>
+            )}
+          </form>
         </section>
       </div>
     </div>

@@ -1,5 +1,6 @@
 "use client";
 import React, { useRef, useEffect, useState, useCallback } from "react";
+import { getAiHeaders } from "@/lib/userApiKey";
 
 function MessageContent({
   content,
@@ -109,7 +110,7 @@ export default function AiPanel({ fileContent, language, onClose, editorRef }: A
       abortRef.current = new AbortController();
       const res = await fetch("/api/ai/assist", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ message: text, fileContent, language, history }),
         signal: abortRef.current.signal,
       });

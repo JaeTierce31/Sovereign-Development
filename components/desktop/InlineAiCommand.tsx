@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { getAiHeaders } from "@/lib/userApiKey";
 
 interface MonacoEditor {
   getSelection(): { isEmpty(): boolean; startLineNumber: number; endLineNumber: number; startColumn: number; endColumn: number } | null;
@@ -63,7 +64,7 @@ export default function InlineAiCommand({ language, editorRef, onClose }: Props)
     try {
       const res = await fetch("/api/ai/inline", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAiHeaders() },
         body: JSON.stringify({ prompt: prompt.trim(), selection, language, context }),
         signal: abortRef.current.signal,
       });

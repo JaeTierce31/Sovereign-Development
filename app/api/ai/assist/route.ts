@@ -9,12 +9,13 @@ export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const userKey = req.headers.get('X-User-Anthropic-Key') ?? '';
+  const anthropicKey = userKey || process.env.ANTHROPIC_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
 
   if (!anthropicKey && !groqKey) {
     return NextResponse.json(
-      { error: 'AI assistant not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY to enable.' },
+      { error: 'AI assistant not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY to enable, or set your own key in Settings.' },
       { status: 503 }
     );
   }
@@ -56,7 +57,6 @@ export async function POST(req: NextRequest) {
     return result.toTextStreamResponse();
   }
 
-  // Groq fallback — llama-3.3-70b-versatile for coding when Anthropic key isn't set
   const { createGroq } = await import('@ai-sdk/groq');
   const groq = createGroq({ apiKey: groqKey! });
   const result = streamText({
