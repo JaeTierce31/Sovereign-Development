@@ -11,6 +11,7 @@ import ExecutionPanel from "./ExecutionPanel";
 import FileFinder from "./FileFinder";
 import GlobalSearch from "./GlobalSearch";
 import FileTree from "./FileTree";
+import MarkdownPreview from "./MarkdownPreview";
 
 interface EditorPrefs {
   fontSize: number;
@@ -69,6 +70,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mdPreview, setMdPreview] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const editorInstanceRef = useRef<unknown>(null);
   const [isPublic, setIsPublic] = useState(false);
@@ -201,6 +203,10 @@ function IDECore({ projectId }: { projectId: string }) {
   }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
+
+  useEffect(() => {
+    if (activeFile && !activeFile.path.endsWith(".md")) setMdPreview(false);
+  }, [activeFile]);
 
   const handleChange = useCallback(
     (value: string | undefined) => {
@@ -467,6 +473,19 @@ function IDECore({ projectId }: { projectId: string }) {
                 ⌨ Terminal
               </button>
             )}
+            {activeFile?.path.endsWith(".md") && (
+              <button
+                onClick={() => setMdPreview((v) => !v)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  mdPreview
+                    ? "bg-indigo-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Toggle markdown preview"
+              >
+                ⊞ Preview
+              </button>
+            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
@@ -507,46 +526,53 @@ function IDECore({ projectId }: { projectId: string }) {
 
         {/* Editor + AI panel */}
         <div className="flex min-h-0" style={{ flex: termOpen ? "0 0 60%" : "1 1 0" }}>
-          <div className="flex-1 min-w-0">
-            {activeFile ? (
-              <Editor
-                key={activeFile.id}
-                height="100%"
-                language={activeFile.language ?? inferLanguage(activeFile.path)}
-                value={activeFile.content ?? ""}
-                theme={prefs.theme}
-                onChange={handleChange}
-                onMount={(editor) => {
-                  editorInstanceRef.current = editor;
-                  setCursorPos({ line: 1, col: 1 });
-                  editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
-                    setCursorPos({ line: e.position.lineNumber, col: e.position.column });
-                  });
-                }}
-                options={{
-                  fontSize: prefs.fontSize,
-                  tabSize: prefs.tabSize,
-                  minimap: { enabled: prefs.minimap },
-                  automaticLayout: true,
-                  wordWrap: prefs.wordWrap,
-                }}
-              />
-            ) : (
-              !loading && (
-                <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-                  {files.length === 0 ? (
-                    <div className="text-center">
-                      <p className="mb-2">No files yet.</p>
-                      <button
-                        onClick={() => setShowNewFile(true)}
-                        className="text-blue-500 hover:text-blue-400 text-sm"
-                      >
-                        + Create a file
-                      </button>
-                    </div>
-                  ) : "Select a file"}
-                </div>
-              )
+          <div className={`flex min-w-0 ${mdPreview && activeFile?.path.endsWith(".md") ? "flex-1" : "flex-1"}`} style={{ minHeight: 0 }}>
+            <div className={mdPreview && activeFile?.path.endsWith(".md") ? "w-1/2 min-w-0" : "flex-1 min-w-0"}>
+              {activeFile ? (
+                <Editor
+                  key={activeFile.id}
+                  height="100%"
+                  language={activeFile.language ?? inferLanguage(activeFile.path)}
+                  value={activeFile.content ?? ""}
+                  theme={prefs.theme}
+                  onChange={handleChange}
+                  onMount={(editor) => {
+                    editorInstanceRef.current = editor;
+                    setCursorPos({ line: 1, col: 1 });
+                    editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
+                      setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+                    });
+                  }}
+                  options={{
+                    fontSize: prefs.fontSize,
+                    tabSize: prefs.tabSize,
+                    minimap: { enabled: prefs.minimap },
+                    automaticLayout: true,
+                    wordWrap: prefs.wordWrap,
+                  }}
+                />
+              ) : (
+                !loading && (
+                  <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+                    {files.length === 0 ? (
+                      <div className="text-center">
+                        <p className="mb-2">No files yet.</p>
+                        <button
+                          onClick={() => setShowNewFile(true)}
+                          className="text-blue-500 hover:text-blue-400 text-sm"
+                        >
+                          + Create a file
+                        </button>
+                      </div>
+                    ) : "Select a file"}
+                  </div>
+                )
+              )}
+            </div>
+            {mdPreview && activeFile?.path.endsWith(".md") && (
+              <div className="w-1/2 border-l border-gray-700 min-w-0">
+                <MarkdownPreview content={activeFile.content ?? ""} />
+              </div>
             )}
           </div>
 
