@@ -707,8 +707,12 @@ function IDECore({ projectId }: { projectId: string }) {
       {searchOpen && (
         <GlobalSearch
           projectId={projectId}
+          files={files}
           onSelect={(id) => { openFile(id); setSearchOpen(false); }}
           onClose={() => setSearchOpen(false)}
+          onFileSave={(fileId, content) => {
+            setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, content } : f));
+          }}
         />
       )}
       {prefsOpen && (
