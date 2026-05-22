@@ -91,6 +91,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState(false);
+  const [formatError, setFormatError] = useState(false);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -342,6 +344,40 @@ function IDECore({ projectId }: { projectId: string }) {
     }
   }
 
+  function formatJson() {
+    if (!activeFile || !activeFileId) return;
+    try {
+      const formatted = JSON.stringify(JSON.parse(activeFile.content ?? ""), null, 2);
+      handleChange(formatted);
+      setFormatError(false);
+    } catch {
+      setFormatError(true);
+      setTimeout(() => setFormatError(false), 2000);
+    }
+  }
+
+  async function uploadFiles(fileList: FileList) {
+    const uploads = Array.from(fileList).filter((f) => f.size < 1_000_000);
+    for (const file of uploads) {
+      const content = await file.text();
+      const res = await fetch(`/api/projects/${projectId}/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: file.name, content }),
+      });
+      if (res.ok) {
+        const created: ProjectFile = await res.json();
+        setFiles((prev) => {
+          if (prev.some((f) => f.path === created.path)) {
+            return prev.map((f) => f.path === created.path ? created : f);
+          }
+          return [...prev, created];
+        });
+        openFile(created.id);
+      }
+    }
+  }
+
   const activeExt = activeFile?.path.split(".").pop() ?? "";
   const isRunnable = RUNNABLE_EXTS.has(activeExt);
 
@@ -393,7 +429,12 @@ function IDECore({ projectId }: { projectId: string }) {
 
       {/* Sidebar */}
       {sidebarOpen && (
-      <div className="w-56 bg-gray-900 border-r border-gray-700 flex flex-col shrink-0">
+      <div
+        className={`w-56 bg-gray-900 border-r flex flex-col shrink-0 transition-colors ${dropTarget ? "border-blue-500 bg-blue-950/20" : "border-gray-700"}`}
+        onDragOver={(e) => { e.preventDefault(); setDropTarget(true); }}
+        onDragLeave={() => setDropTarget(false)}
+        onDrop={(e) => { e.preventDefault(); setDropTarget(false); if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); }}
+      >
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700">
           <button
             onClick={() => router.push("/dashboard")}
@@ -452,6 +493,12 @@ function IDECore({ projectId }: { projectId: string }) {
               onBlur={() => { if (!newFileName.trim()) { setShowNewFile(false); } }}
             />
           </form>
+        )}
+
+        {dropTarget && (
+          <div className="mx-3 mb-2 border border-dashed border-blue-500 rounded-lg px-3 py-4 text-center text-xs text-blue-400 shrink-0">
+            Drop files to upload
+          </div>
         )}
 
         {loading ? (
@@ -568,6 +615,19 @@ function IDECore({ projectId }: { projectId: string }) {
                 title="Toggle HTML preview"
               >
                 ⊞ Preview
+              </button>
+            )}
+            {activeExt === "json" && (
+              <button
+                onClick={formatJson}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  formatError
+                    ? "bg-red-800 text-red-300"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Format JSON"
+              >
+                {formatError ? "✗ Invalid JSON" : "{ } Format"}
               </button>
             )}
             <button
