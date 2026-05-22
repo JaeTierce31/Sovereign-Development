@@ -608,6 +608,8 @@ function IDECore({ projectId }: { projectId: string }) {
               language={activeFile?.language ?? inferLanguage(activeFile?.path ?? "")}
               onClose={() => setAiOpen(false)}
               editorRef={editorInstanceRef}
+              projectId={projectId}
+              allFiles={files}
             />
           )}
         </div>

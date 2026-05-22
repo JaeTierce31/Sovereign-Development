@@ -5,6 +5,8 @@ import { streamText } from 'ai';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+const MAX_PROJECT_CONTEXT = 20_000;
+
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -20,15 +22,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { message, fileContent, language, history } = await req.json() as {
+  const { message, fileContent, language, history, projectFiles } = await req.json() as {
     message: string;
     fileContent?: string;
     language?: string;
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    projectFiles?: Array<{ path: string; content: string }>;
   };
 
   if (!message?.trim()) {
     return NextResponse.json({ error: 'Message is required' }, { status: 400 });
+  }
+
+  let projectContext = '';
+  if (projectFiles && projectFiles.length > 0) {
+    let total = 0;
+    const parts: string[] = [];
+    for (const f of projectFiles) {
+      const block = `=== ${f.path} ===\n${f.content}`;
+      if (total + block.length > MAX_PROJECT_CONTEXT) break;
+      parts.push(block);
+      total += block.length + 2;
+    }
+    if (parts.length > 0) {
+      projectContext = `\n\nProject files (${parts.length} of ${projectFiles.length}):\n${parts.join('\n\n')}`;
+    }
   }
 
   const systemPrompt = [
@@ -36,8 +54,9 @@ export async function POST(req: NextRequest) {
     'Be concise and direct. Prefer code examples over long explanations.',
     'When showing code, always use markdown fenced code blocks with the language specified.',
     fileContent
-      ? `\nThe user is currently editing a ${language ?? 'text'} file with this content:\n\`\`\`${language ?? ''}\n${fileContent.slice(0, 8000)}\n\`\`\``
+      ? `\nThe user is currently editing a ${language ?? 'text'} file:\n\`\`\`${language ?? ''}\n${fileContent.slice(0, 8000)}\n\`\`\``
       : '',
+    projectContext,
   ].join('\n');
 
   const messages = [

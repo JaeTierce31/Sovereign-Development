@@ -55,20 +55,28 @@ interface Message {
   content: string;
 }
 
+interface ProjectFile {
+  path: string;
+  content: string | null;
+}
+
 interface AiPanelProps {
   fileContent: string;
   language: string;
   onClose: () => void;
   editorRef?: React.RefObject<unknown>;
+  projectId?: string;
+  allFiles?: ProjectFile[];
 }
 
-export default function AiPanel({ fileContent, language, onClose, editorRef }: AiPanelProps) {
+export default function AiPanel({ fileContent, language, onClose, editorRef, projectId, allFiles }: AiPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [unconfigured, setUnconfigured] = useState(false);
+  const [useProjectContext, setUseProjectContext] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   function applyToEditor(code: string) {
@@ -105,13 +113,16 @@ export default function AiPanel({ fileContent, language, onClose, editorRef }: A
     setStreaming(true);
 
     const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    const projectFiles = useProjectContext && allFiles
+      ? allFiles.filter((f) => f.content).map((f) => ({ path: f.path, content: f.content! }))
+      : undefined;
 
     try {
       abortRef.current = new AbortController();
       const res = await fetch("/api/ai/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAiHeaders() },
-        body: JSON.stringify({ message: text, fileContent, language, history }),
+        body: JSON.stringify({ message: text, fileContent, language, history, projectFiles }),
         signal: abortRef.current.signal,
       });
 
@@ -147,7 +158,7 @@ export default function AiPanel({ fileContent, language, onClose, editorRef }: A
     } finally {
       setStreaming(false);
     }
-  }, [input, streaming, messages, fileContent, language]);
+  }, [input, streaming, messages, fileContent, language, useProjectContext, allFiles]);
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -161,17 +172,33 @@ export default function AiPanel({ fileContent, language, onClose, editorRef }: A
   return (
     <div className="h-full flex flex-col bg-gray-950 border-l border-gray-700 w-80 shrink-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-blue-500" />
-          <span className="text-xs font-semibold text-gray-300">Peregrine AI</span>
+      <div className="px-3 py-2 border-b border-gray-700 shrink-0">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-blue-500" />
+            <span className="text-xs font-semibold text-gray-300">Peregrine AI</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-300 text-lg leading-none transition-colors"
+          >
+            ×
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-gray-300 text-lg leading-none transition-colors"
-        >
-          ×
-        </button>
+        {allFiles && allFiles.length > 1 && (
+          <button
+            onClick={() => setUseProjectContext((v) => !v)}
+            className={`flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded transition-colors ${
+              useProjectContext
+                ? "bg-blue-600/20 text-blue-400 border border-blue-600/40"
+                : "text-gray-600 hover:text-gray-400 border border-transparent"
+            }`}
+            title={useProjectContext ? "Disable project-wide context" : "Include all files as context"}
+          >
+            <span>{useProjectContext ? "⊕" : "⊕"}</span>
+            {useProjectContext ? `Project context (${allFiles.length} files)` : "Add project context"}
+          </button>
+        )}
       </div>
 
       {/* Messages */}
