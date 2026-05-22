@@ -23,10 +23,11 @@ interface EditorPrefs {
   wordWrap: "on" | "off";
   minimap: boolean;
   theme: "vs-dark" | "light";
+  stickyScroll: boolean;
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark" };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true };
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
 
@@ -776,6 +777,12 @@ function IDECore({ projectId }: { projectId: string }) {
                     minimap: { enabled: prefs.minimap },
                     automaticLayout: true,
                     wordWrap: prefs.wordWrap,
+                    stickyScroll: { enabled: prefs.stickyScroll },
+                    scrollBeyondLastLine: false,
+                    smoothScrolling: true,
+                    cursorSmoothCaretAnimation: "on",
+                    renderLineHighlight: "all",
+                    padding: { top: 8, bottom: 8 },
                   }}
                 />
               ) : (
@@ -886,6 +893,13 @@ function IDECore({ projectId }: { projectId: string }) {
               title={`Minimap: ${prefs.minimap ? "on" : "off"} (click to toggle)`}
             >
               map
+            </button>
+            <button
+              onClick={() => setPrefs((p) => ({ ...p, stickyScroll: !p.stickyScroll }))}
+              className={`transition-colors ${prefs.stickyScroll ? "text-blue-400 hover:text-blue-300" : "hover:text-white"}`}
+              title={`Sticky scroll: ${prefs.stickyScroll ? "on" : "off"} (click to toggle)`}
+            >
+              sticky
             </button>
             <button
               onClick={() => setPrefs((p) => ({ ...p, theme: p.theme === "vs-dark" ? "light" : "vs-dark" }))}
@@ -1040,6 +1054,16 @@ function IDECore({ projectId }: { projectId: string }) {
                   className={`relative w-9 h-5 rounded-full transition-colors ${prefs.minimap ? "bg-blue-600" : "bg-gray-700"}`}
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${prefs.minimap ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Sticky scroll */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Sticky scroll</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, stickyScroll: !p.stickyScroll }))}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${prefs.stickyScroll ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${prefs.stickyScroll ? "translate-x-4" : "translate-x-0.5"}`} />
                 </button>
               </div>
               {/* Theme */}
