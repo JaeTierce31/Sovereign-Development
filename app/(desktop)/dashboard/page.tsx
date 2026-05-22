@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { TEMPLATES } from "@/lib/templates";
 
+type ImportState = "idle" | "uploading" | "done" | "error";
+
 interface Project {
   id: string;
   name: string;
@@ -113,6 +115,8 @@ export default function Dashboard() {
   const [newName, setNewName] = useState("");
   const [showInput, setShowInput] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("blank");
+  const [importState, setImportState] = useState<ImportState>("idle");
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/projects")
@@ -163,6 +167,26 @@ export default function Dashboard() {
     }
   }, []);
 
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportState("uploading");
+    try {
+      const form = new FormData();
+      form.append("zip", file);
+      form.append("name", file.name.replace(/\.zip$/i, ""));
+      const res = await fetch("/api/projects/import", { method: "POST", body: form });
+      if (!res.ok) { setImportState("error"); return; }
+      const project = await res.json();
+      setImportState("done");
+      router.push(`/project/${project.id}`);
+    } catch {
+      setImportState("error");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
   return (
     <div className="min-h-screen bg-peregrine-dark flex flex-col">
       <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-12">
@@ -175,6 +199,21 @@ export default function Dashboard() {
             >
               + New Project
             </button>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={importState === "uploading"}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
+              title="Import a project from a ZIP file"
+            >
+              {importState === "uploading" ? "Importing…" : importState === "error" ? "Import failed" : "Import ZIP"}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".zip,application/zip"
+              className="hidden"
+              onChange={handleImport}
+            />
             <button
               onClick={() => router.push("/settings")}
               className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
@@ -239,12 +278,21 @@ export default function Dashboard() {
           <div className="text-center py-20">
             <p className="text-gray-500 mb-4">No projects yet.</p>
             {!showInput && (
-              <button
-                onClick={() => setShowInput(true)}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-              >
-                Create your first project
-              </button>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => setShowInput(true)}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                >
+                  Create your first project
+                </button>
+                <button
+                  onClick={() => importInputRef.current?.click()}
+                  disabled={importState === "uploading"}
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+                >
+                  Import ZIP
+                </button>
+              </div>
             )}
           </div>
         ) : (
