@@ -31,16 +31,20 @@ function ProjectCard({
   onRename,
   onDelete,
   onDuplicate,
+  onShare,
   pinned,
   onPin,
+  copied,
 }: {
   project: Project;
   onOpen: () => void;
   onRename: (name: string) => Promise<void>;
   onDelete: () => Promise<void>;
   onDuplicate: () => Promise<void>;
+  onShare: () => void;
   pinned: boolean;
   onPin: () => void;
+  copied: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.name);
@@ -62,6 +66,8 @@ function ProjectCard({
     if (!confirm(`Delete "${project.name}" and all its files?`)) return;
     await onDelete();
   }
+
+  const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/share/${project.id}` : "";
 
   return (
     <div className="relative group">
@@ -100,9 +106,13 @@ function ProjectCard({
               </span>
             )}
             {project.isPublic && (
-              <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-500 rounded">
-                public
-              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(shareUrl); onShare(); }}
+                className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-500 rounded hover:bg-green-800/40 transition-colors"
+                title="Copy share link"
+              >
+                {copied ? "✓ Copied!" : "public · copy link"}
+              </button>
             )}
           </div>
         </button>
@@ -116,6 +126,13 @@ function ProjectCard({
             title={pinned ? "Unpin project" : "Pin project to top"}
           >
             📌
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onShare(); }}
+            className={`p-1 rounded transition-colors text-xs ${project.isPublic ? "text-green-500 hover:text-green-300" : "text-gray-500 hover:text-gray-200"}`}
+            title={project.isPublic ? "Copy share link" : "Make public & copy link"}
+          >
+            🔗
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); setEditing(true); setDraft(project.name); }}
@@ -166,6 +183,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -253,6 +271,26 @@ export default function Dashboard() {
       setProjects((prev) => [...prev, copy]);
     }
   }, []);
+
+  const handleShare = useCallback(async (id: string) => {
+    const project = projects.find((p) => p.id === id);
+    if (!project) return;
+    let isPublic = project.isPublic;
+    if (!isPublic) {
+      const res = await fetch(`/api/projects/${id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: true }),
+      });
+      if (!res.ok) return;
+      isPublic = true;
+      setProjects((prev) => prev.map((p) => p.id === id ? { ...p, isPublic: true } : p));
+    }
+    const shareUrl = `${window.location.origin}/share/${id}`;
+    navigator.clipboard.writeText(shareUrl).catch(() => {});
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((prev) => prev === id ? null : prev), 2000);
+  }, [projects]);
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -437,8 +475,10 @@ export default function Dashboard() {
                 onRename={(name) => handleRename(p.id, name)}
                 onDelete={() => handleDelete(p.id)}
                 onDuplicate={() => handleDuplicate(p.id)}
+                onShare={() => handleShare(p.id)}
                 pinned={pinnedIds.has(p.id)}
                 onPin={() => handlePin(p.id)}
+                copied={copiedId === p.id}
               />
             ))}
           </div>
