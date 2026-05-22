@@ -340,6 +340,24 @@ function IDECore({ projectId }: { projectId: string }) {
     setFiles((prev) => prev.filter((f) => f.id !== fileId));
   }
 
+  async function duplicateFile(fileId: string) {
+    const source = files.find((f) => f.id === fileId);
+    if (!source) return;
+    const ext = source.path.includes(".") ? "." + source.path.split(".").pop() : "";
+    const base = ext ? source.path.slice(0, -ext.length) : source.path;
+    const copyPath = `${base}.copy${ext}`;
+    const res = await fetch(`/api/projects/${projectId}/files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: copyPath, content: source.content ?? "" }),
+    });
+    if (res.ok) {
+      const created: ProjectFile = await res.json();
+      setFiles((prev) => [...prev, created]);
+      openFile(created.id);
+    }
+  }
+
   async function commitRename(fileId: string) {
     const trimmed = renameVal.trim();
     const original = files.find((f) => f.id === fileId)?.path ?? "";
@@ -528,6 +546,7 @@ function IDECore({ projectId }: { projectId: string }) {
             onRenameChange={setRenameVal}
             onCommitRename={commitRename}
             onDeleteFile={deleteFile}
+            onDuplicateFile={duplicateFile}
           />
         )}
       </div>

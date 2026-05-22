@@ -111,6 +111,7 @@ interface FileTreeProps {
   onRenameChange: (val: string) => void;
   onCommitRename: (id: string) => void;
   onDeleteFile: (id: string, e: React.MouseEvent) => void;
+  onDuplicateFile?: (id: string) => void;
   defaultFolderPath?: string;
   onFolderPathChange?: (path: string) => void;
 }
@@ -353,6 +354,14 @@ export default function FileTree(props: FileTreeProps) {
           >
             {copiedPath ? "✓ Copied!" : "Copy Path"}
           </button>
+          {props.onDuplicateFile && (
+            <button
+              className={ITEM}
+              onClick={() => { props.onDuplicateFile!(contextMenu.fileId); setContextMenu(null); }}
+            >
+              Duplicate
+            </button>
+          )}
           <div className="border-t border-gray-700 my-1" />
           <button
             className={`${ITEM} text-red-400 hover:bg-red-900/30`}

@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const { path: filePath } = await req.json() as { path: string };
+  const { path: filePath, content: initialContent } = await req.json() as { path: string; content?: string };
   if (!filePath?.trim()) return NextResponse.json({ error: 'path is required' }, { status: 400 });
 
   const ext = filePath.split('.').pop() ?? '';
@@ -53,7 +53,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       id: randomUUID(),
       projectId: params.id,
       path: filePath.trim(),
-      content: getFileTemplate(filePath.trim()),
+      content: initialContent !== undefined ? initialContent : getFileTemplate(filePath.trim()),
       language: langMap[ext] ?? 'plaintext',
       updatedAt: Date.now(),
     })
