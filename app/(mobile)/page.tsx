@@ -41,6 +41,8 @@ export default function MobileHome() {
   const [renameVal, setRenameVal] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [importState, setImportState] = useState<"idle" | "uploading" | "error">("idle");
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/projects")
@@ -136,6 +138,28 @@ export default function MobileHome() {
     setTimeout(() => setCopiedId((prev) => prev === id ? null : prev), 2000);
   }
 
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportState("uploading");
+    try {
+      const form = new FormData();
+      form.append("zip", file);
+      form.append("name", file.name.replace(/\.zip$/i, ""));
+      const res = await fetch("/api/projects/import", { method: "POST", body: form });
+      if (!res.ok) { setImportState("error"); setTimeout(() => setImportState("idle"), 3000); return; }
+      const project = await res.json();
+      setImportState("idle");
+      recordOpen(project.id);
+      router.push(`/editor/${project.id}`);
+    } catch {
+      setImportState("error");
+      setTimeout(() => setImportState("idle"), 3000);
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
   return (
     <div
       className="h-full w-full flex flex-col bg-peregrine-dark"
@@ -149,13 +173,30 @@ export default function MobileHome() {
             <p className="text-xs text-gray-500">{projects.length} project{projects.length !== 1 ? "s" : ""}</p>
           )}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); setShowCreate(true); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
-        >
-          <span className="text-base leading-none">+</span>
-          <span>New</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => { e.stopPropagation(); importInputRef.current?.click(); }}
+            disabled={importState === "uploading"}
+            className="px-3 py-1.5 text-sm text-gray-400 active:text-gray-200 disabled:opacity-50 transition-colors"
+            title="Import ZIP"
+          >
+            {importState === "uploading" ? "…" : importState === "error" ? "✗" : "↓ ZIP"}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowCreate(true); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+          >
+            <span className="text-base leading-none">+</span>
+            <span>New</span>
+          </button>
+        </div>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".zip"
+          className="hidden"
+          onChange={handleImport}
+        />
       </div>
 
       {/* Search + sort (show when there are projects) */}
