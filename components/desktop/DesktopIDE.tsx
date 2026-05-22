@@ -103,6 +103,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const gotoLineRef = useRef<HTMLInputElement>(null);
   const dragTabIndex = useRef<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -264,6 +265,7 @@ function IDECore({ projectId }: { projectId: string }) {
         setGotoLineOpen(true);
         setGotoLineVal(String(cursorPos.line));
       } else if (e.key === "Escape") {
+        if (tabContextMenu) { setTabContextMenu(null); return; }
         if (gotoLineOpen) setGotoLineOpen(false);
         else if (inlineAiOpen) setInlineAiOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
@@ -279,7 +281,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -601,6 +603,10 @@ function IDECore({ projectId }: { projectId: string }) {
                     setDragOverIndex(null);
                   }}
                   onDragEnd={() => { dragTabIndex.current = null; setDragOverIndex(null); }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setTabContextMenu({ tabId, x: e.clientX, y: e.clientY });
+                  }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-r border-gray-700 cursor-pointer shrink-0 select-none transition-colors ${
                     isActive
                       ? "bg-gray-900 text-white border-t-2 border-t-blue-500"
@@ -924,6 +930,62 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         </div>
       </div>
+      {tabContextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onMouseDown={() => setTabContextMenu(null)}
+        >
+          <div
+            className="absolute bg-gray-900 border border-gray-700 rounded-lg shadow-2xl py-1 w-52 text-sm overflow-hidden"
+            style={{ top: tabContextMenu.y, left: tabContextMenu.x }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {[
+              {
+                label: "Close",
+                action: () => {
+                  const e = { stopPropagation: () => {} } as React.MouseEvent;
+                  closeTab(tabContextMenu.tabId, e);
+                },
+              },
+              {
+                label: "Close Others",
+                action: () => {
+                  setOpenTabs([tabContextMenu.tabId]);
+                  setActiveFileId(tabContextMenu.tabId);
+                },
+              },
+              {
+                label: "Close All",
+                action: () => {
+                  setOpenTabs([]);
+                  setActiveFileId(null);
+                },
+              },
+              null,
+              {
+                label: "Copy Path",
+                action: () => {
+                  const f = files.find((f) => f.id === tabContextMenu.tabId);
+                  if (f) navigator.clipboard.writeText(f.path).catch(() => {});
+                },
+              },
+            ].map((item, i) =>
+              item === null ? (
+                <div key={i} className="my-1 border-t border-gray-800" />
+              ) : (
+                <button
+                  key={item.label}
+                  onClick={() => { item.action(); setTabContextMenu(null); }}
+                  className="w-full text-left px-4 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                >
+                  {item.label}
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      )}
       {gotoLineOpen && activeFile && (
         <div
           className="fixed inset-0 z-50"
