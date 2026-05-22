@@ -13,6 +13,7 @@ import GlobalSearch from "./GlobalSearch";
 import FileTree from "./FileTree";
 import MarkdownPreview from "./MarkdownPreview";
 import InlineAiCommand from "./InlineAiCommand";
+import ProjectSettingsPanel from "./ProjectSettingsPanel";
 
 interface EditorPrefs {
   fontSize: number;
@@ -77,6 +78,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const editorInstanceRef = useRef<unknown>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [newFileName, setNewFileName] = useState("");
   const [showNewFile, setShowNewFile] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -128,9 +131,14 @@ function IDECore({ projectId }: { projectId: string }) {
   }, [projectId, router]);
 
   useEffect(() => {
-    fetch(`/api/projects/${projectId}/share`)
+    fetch(`/api/projects/${projectId}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d) setIsPublic(d.isPublic); });
+      .then((d) => {
+        if (d) {
+          setProjectName(d.name ?? "");
+          setIsPublic(d.isPublic ?? false);
+        }
+      });
   }, [projectId]);
 
   useEffect(() => {
@@ -360,9 +368,21 @@ function IDECore({ projectId }: { projectId: string }) {
             >
               {isPublic ? "⬤ Shared" : "Share"}
             </button>
+            <button
+              onClick={() => setProjectSettingsOpen(true)}
+              className="text-gray-500 hover:text-gray-300 transition-colors text-sm leading-none"
+              title="Project settings"
+            >
+              ⚙
+            </button>
             <CursorPresence />
           </div>
         </div>
+        {projectName && (
+          <div className="px-3 py-1.5 border-b border-gray-700/50">
+            <p className="text-xs text-gray-400 truncate" title={projectName}>{projectName}</p>
+          </div>
+        )}
 
         <div className="flex items-center justify-between px-3 py-2">
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Explorer</span>
@@ -771,6 +791,19 @@ function IDECore({ projectId }: { projectId: string }) {
             ×
           </button>
         </div>
+      )}
+      {projectSettingsOpen && (
+        <ProjectSettingsPanel
+          projectId={projectId}
+          initialName={projectName}
+          initialIsPublic={isPublic}
+          onClose={() => setProjectSettingsOpen(false)}
+          onNameChange={(name) => setProjectName(name)}
+          onVisibilityChange={(pub) => {
+            setIsPublic(pub);
+            if (pub) setShareToast(true);
+          }}
+        />
       )}
     </div>
   );
