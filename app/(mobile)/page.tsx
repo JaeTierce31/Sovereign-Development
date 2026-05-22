@@ -39,6 +39,7 @@ export default function MobileHome() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/projects")
@@ -113,6 +114,25 @@ export default function MobileHome() {
       const newProject: Project = await res.json();
       setProjects((prev) => [newProject, ...prev]);
     }
+  }
+
+  async function handleShare(id: string) {
+    const project = projects.find((p) => p.id === id);
+    if (!project) return;
+    if (!project.isPublic) {
+      const res = await fetch(`/api/projects/${id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: true }),
+      });
+      if (!res.ok) return;
+      setProjects((prev) => prev.map((p) => p.id === id ? { ...p, isPublic: true } : p));
+    }
+    const url = `${window.location.origin}/share/${id}`;
+    navigator.clipboard.writeText(url).catch(() => {});
+    setCopiedId(id);
+    setMenuOpenId(null);
+    setTimeout(() => setCopiedId((prev) => prev === id ? null : prev), 2000);
   }
 
   return (
@@ -296,6 +316,9 @@ export default function MobileHome() {
                           {p.isPublic && (
                             <span className="text-xs text-green-600">public</span>
                           )}
+                          {copiedId === p.id && (
+                            <span className="text-xs text-blue-400">✓ Link copied!</span>
+                          )}
                         </div>
                       </button>
                       <button
@@ -313,6 +336,12 @@ export default function MobileHome() {
                           className="flex-1 py-2.5 text-xs text-gray-300 active:bg-gray-700 transition-colors"
                         >
                           Rename
+                        </button>
+                        <button
+                          onClick={() => handleShare(p.id)}
+                          className="flex-1 py-2.5 text-xs text-gray-300 active:bg-gray-700 transition-colors border-l border-gray-700"
+                        >
+                          {p.isPublic ? "Copy link" : "Share"}
                         </button>
                         <button
                           onClick={() => handleDuplicate(p.id)}
