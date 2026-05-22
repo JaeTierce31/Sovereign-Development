@@ -11,7 +11,18 @@ interface Project {
   isPublic?: boolean;
 }
 
-type SortKey = "newest" | "oldest" | "az" | "za";
+type SortKey = "recent" | "newest" | "oldest" | "az" | "za";
+
+function getLastOpened(id: string): number {
+  try {
+    const val = localStorage.getItem(`peregrine:last-opened:${id}`);
+    return val ? parseInt(val, 10) : 0;
+  } catch { return 0; }
+}
+
+function recordOpen(id: string) {
+  try { localStorage.setItem(`peregrine:last-opened:${id}`, Date.now().toString()); } catch { /* ignore */ }
+}
 
 export default function MobileHome() {
   const router = useRouter();
@@ -22,7 +33,7 @@ export default function MobileHome() {
   const [newName, setNewName] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState("blank");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortKey>("newest");
+  const [sort, setSort] = useState<SortKey>("recent");
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -39,6 +50,11 @@ export default function MobileHome() {
   const sorted = projects
     .filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
+      if (sort === "recent") {
+        const la = getLastOpened(a.id), lb = getLastOpened(b.id);
+        if (la || lb) return (lb || a.createdAt) - (la || b.createdAt);
+        return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+      }
       if (sort === "newest") return (b.createdAt ?? 0) - (a.createdAt ?? 0);
       if (sort === "oldest") return (a.createdAt ?? 0) - (b.createdAt ?? 0);
       if (sort === "az") return a.name.localeCompare(b.name);
@@ -108,6 +124,7 @@ export default function MobileHome() {
             onChange={(e) => setSort(e.target.value as SortKey)}
             className="px-2 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-400 focus:outline-none focus:border-blue-500"
           >
+            <option value="recent">Recent</option>
             <option value="newest">Newest</option>
             <option value="oldest">Oldest</option>
             <option value="az">A→Z</option>
@@ -196,7 +213,7 @@ export default function MobileHome() {
             {sorted.map((p) => (
               <li key={p.id}>
                 <button
-                  onClick={() => router.push(`/editor/${p.id}`)}
+                  onClick={() => { recordOpen(p.id); router.push(`/editor/${p.id}`); }}
                   className="w-full text-left px-4 py-3.5 flex items-center justify-between active:bg-gray-800 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
