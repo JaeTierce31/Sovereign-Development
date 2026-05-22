@@ -596,10 +596,26 @@ function IDECore({ projectId }: { projectId: string }) {
 
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="truncate text-xs text-gray-500">{activeFile?.path ?? "No file selected"}</span>
-            {saveStatus === "saving" && <span className="text-xs text-gray-600 shrink-0">Saving…</span>}
-            {saveStatus === "saved" && <span className="text-xs text-green-600 shrink-0">Saved ✓</span>}
+          <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+            {activeFile ? (
+              <nav className="flex items-center gap-0.5 text-xs min-w-0 overflow-hidden" aria-label="File path">
+                {activeFile.path.split("/").map((segment, i, arr) => {
+                  const isLast = i === arr.length - 1;
+                  return (
+                    <span key={i} className="flex items-center gap-0.5 shrink-0">
+                      {i > 0 && <span className="text-gray-700 select-none">/</span>}
+                      <span className={isLast ? "text-gray-200 font-medium" : "text-gray-500 hover:text-gray-300 transition-colors"}>
+                        {segment}
+                      </span>
+                    </span>
+                  );
+                })}
+              </nav>
+            ) : (
+              <span className="text-xs text-gray-600">No file selected</span>
+            )}
+            {saveStatus === "saving" && <span className="text-xs text-gray-600 shrink-0 ml-2">Saving…</span>}
+            {saveStatus === "saved" && <span className="text-xs text-green-600 shrink-0 ml-2">Saved ✓</span>}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {isRunnable && (
