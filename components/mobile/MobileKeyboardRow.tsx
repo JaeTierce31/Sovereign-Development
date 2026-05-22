@@ -24,6 +24,12 @@ export default function MobileKeyboardRow({ editorRef }: { editorRef: any }) {
       <button onClick={() => insertText(']')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{']'}</button>
       <button onClick={() => insertText("'")} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{`'`}</button>
       <button onClick={() => insertText('"')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'"'}</button>
+      <button onClick={() => insertText('`')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'`'}</button>
+      <button onClick={() => insertText(':')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{':'}</button>
+      <button onClick={() => insertText('=')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'='}</button>
+      <button onClick={() => insertText('=>')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'=>'}</button>
+      <button onClick={() => insertText('!')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'!'}</button>
+      <button onClick={() => insertText('...')} className="text-white text-sm px-2 py-1 bg-gray-700 rounded">{'...'}</button>
     </div>
   );
 }

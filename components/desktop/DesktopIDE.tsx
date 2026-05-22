@@ -492,19 +492,6 @@ function IDECore({ projectId }: { projectId: string }) {
                 ⊞ Preview
               </button>
             )}
-            {activeFile?.path.endsWith(".md") && (
-              <button
-                onClick={() => setMdPreview((v) => !v)}
-                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                  mdPreview
-                    ? "bg-indigo-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
-                }`}
-                title="Toggle markdown preview"
-              >
-                ⊞ Preview
-              </button>
-            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${

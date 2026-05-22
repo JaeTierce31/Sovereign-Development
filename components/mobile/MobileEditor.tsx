@@ -3,6 +3,7 @@ import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import MobileKeyboardRow from "./MobileKeyboardRow";
+import MobileAiSheet from "./MobileAiSheet";
 
 interface ProjectFile {
   id: string;
@@ -44,6 +45,7 @@ export default function MobileEditor({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const [aiOpen, setAiOpen] = useState(false);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -158,10 +160,19 @@ export default function MobileEditor({
         >
           {activeFile?.path ?? (loading ? "Loading…" : "No file")}
         </button>
-        <div className="w-16 flex justify-end">
+        <div className="flex items-center gap-1 justify-end w-16">
+          {activeFile && (
+            <button
+              onClick={() => { setAiOpen(true); setShowPicker(false); setShowNewFile(false); }}
+              className="text-xs text-gray-500 active:text-blue-400 px-1.5 py-1 rounded transition-colors"
+              title="AI assist"
+            >
+              ✦
+            </button>
+          )}
           <button
             onClick={() => { setShowNewFile((v) => !v); setShowPicker(false); }}
-            className="text-gray-500 active:text-gray-200 text-lg leading-none px-2"
+            className="text-gray-500 active:text-gray-200 text-lg leading-none px-1.5"
             title="New file"
           >
             +
@@ -293,6 +304,14 @@ export default function MobileEditor({
       </div>
 
       <MobileKeyboardRow editorRef={editorRef} />
+
+      {aiOpen && activeFile && (
+        <MobileAiSheet
+          fileContent={activeFile.content ?? ""}
+          language={activeFile.language ?? inferLang(activeFile.path)}
+          onClose={() => setAiOpen(false)}
+        />
+      )}
     </div>
   );
 }
