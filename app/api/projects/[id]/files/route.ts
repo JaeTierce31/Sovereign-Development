@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { projects, files } from '@/drizzle/schema';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { getFileTemplate } from '@/lib/fileTemplates';
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const userId = await requireAuth();
@@ -52,7 +53,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       id: randomUUID(),
       projectId: params.id,
       path: filePath.trim(),
-      content: '',
+      content: getFileTemplate(filePath.trim()),
       language: langMap[ext] ?? 'plaintext',
       updatedAt: Date.now(),
     })
