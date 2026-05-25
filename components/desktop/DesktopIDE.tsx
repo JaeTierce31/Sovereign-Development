@@ -127,6 +127,17 @@ function ImageViewer({ file, ext }: { file: { path: string; content: string | nu
   );
 }
 
+const SIDEBAR_WIDTH_KEY = "peregrine:sidebar-width";
+const SIDEBAR_MIN = 140;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_DEFAULT = 224;
+
+function getSavedSidebarWidth(): number {
+  if (typeof window === "undefined") return SIDEBAR_DEFAULT;
+  const v = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "", 10);
+  return isNaN(v) ? SIDEBAR_DEFAULT : Math.min(Math.max(v, SIDEBAR_MIN), SIDEBAR_MAX);
+}
+
 function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -145,6 +156,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const isDraggingSidebar = useRef(false);
   const [mdPreview, setMdPreview] = useState(false);
   const [htmlPreview, setHtmlPreview] = useState(false);
   const [inlineAiOpen, setInlineAiOpen] = useState(false);
@@ -199,6 +212,36 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   }, [prefs]);
+
+  useEffect(() => { setSidebarWidth(getSavedSidebarWidth()); }, []);
+
+  const startSidebarDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSidebar.current = true;
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+
+    function onMove(ev: MouseEvent) {
+      if (!isDraggingSidebar.current) return;
+      const next = Math.min(Math.max(startW + ev.clientX - startX, SIDEBAR_MIN), SIDEBAR_MAX);
+      setSidebarWidth(next);
+    }
+    function onUp() {
+      isDraggingSidebar.current = false;
+      setSidebarWidth((w) => {
+        try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w)); } catch { /* ignore */ }
+        return w;
+      });
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [sidebarWidth]);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -629,8 +672,8 @@ function IDECore({ projectId }: { projectId: string }) {
       {/* Sidebar toggle tab (always visible) */}
       <button
         onClick={() => setSidebarOpen((v) => !v)}
-        className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-3 h-12 bg-gray-800 hover:bg-gray-700 border border-gray-600 border-l-0 rounded-r flex items-center justify-center text-gray-500 hover:text-gray-300 transition-colors"
-        style={{ left: sidebarOpen ? "224px" : "0px" }}
+        className="absolute top-1/2 -translate-y-1/2 z-20 w-3 h-12 bg-gray-800 hover:bg-gray-700 border border-gray-600 border-l-0 rounded-r flex items-center justify-center text-gray-500 hover:text-gray-300 transition-colors"
+        style={{ left: sidebarOpen ? `${sidebarWidth}px` : "0px" }}
         title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
       >
         {sidebarOpen ? "‹" : "›"}
@@ -639,7 +682,8 @@ function IDECore({ projectId }: { projectId: string }) {
       {/* Sidebar */}
       {sidebarOpen && (
       <div
-        className={`w-56 bg-gray-900 border-r flex flex-col shrink-0 transition-colors ${dropTarget ? "border-blue-500 bg-blue-950/20" : "border-gray-700"}`}
+        className={`bg-gray-900 border-r flex flex-col shrink-0 relative transition-colors ${dropTarget ? "border-blue-500 bg-blue-950/20" : "border-gray-700"}`}
+        style={{ width: `${sidebarWidth}px` }}
         onDragOver={(e) => { e.preventDefault(); setDropTarget(true); }}
         onDragLeave={() => setDropTarget(false)}
         onDrop={(e) => { e.preventDefault(); setDropTarget(false); if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files); }}
@@ -739,6 +783,12 @@ function IDECore({ projectId }: { projectId: string }) {
             onDeleteFolder={deleteFolder}
           />
         )}
+        {/* Drag handle */}
+        <div
+          onMouseDown={startSidebarDrag}
+          className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/40 transition-colors z-10"
+          title="Drag to resize sidebar"
+        />
       </div>
       )} {/* end sidebarOpen */}
 
