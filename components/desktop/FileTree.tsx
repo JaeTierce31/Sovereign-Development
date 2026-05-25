@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { timeAgo } from "@/lib/timeAgo";
 
 const FILE_ICONS: Record<string, { label: string; className: string }> = {
@@ -94,6 +94,17 @@ function buildTree(files: ProjectFile[]): TreeNode[] {
   return root;
 }
 
+function flattenVisible(nodes: TreeNode[], expandedFolders: Set<string>): TreeNode[] {
+  const result: TreeNode[] = [];
+  for (const node of nodes) {
+    result.push(node);
+    if (node.type === "folder" && expandedFolders.has(node.fullPath)) {
+      result.push(...flattenVisible(node.children, expandedFolders));
+    }
+  }
+  return result;
+}
+
 interface ContextMenuState {
   fileId: string;
   filePath: string;
@@ -147,6 +158,8 @@ function TreeNodeRow({
   toggleFolder,
   onContextMenu,
   onFolderContextMenu,
+  focusedPath,
+  onFocus,
 }: FileTreeProps & {
   node: TreeNode;
   depth: number;
@@ -154,18 +167,22 @@ function TreeNodeRow({
   toggleFolder: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, fileId: string, filePath: string) => void;
   onFolderContextMenu: (e: React.MouseEvent, folderPath: string) => void;
+  focusedPath: string | null;
+  onFocus: (path: string) => void;
 }) {
   const indent = depth * 12;
 
   if (node.type === "folder") {
     const open = expandedFolders.has(node.fullPath);
+    const isFocused = focusedPath === node.fullPath;
     return (
       <>
         <button
-          onClick={() => toggleFolder(node.fullPath)}
+          onClick={() => { toggleFolder(node.fullPath); onFocus(node.fullPath); }}
           onContextMenu={(e) => { e.preventDefault(); onFolderContextMenu(e, node.fullPath); }}
-          className="w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+          className={`w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors ${isFocused ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
           style={{ paddingLeft: `${8 + indent}px` }}
+          tabIndex={-1}
         >
           <span className="text-gray-600 text-xs shrink-0">{open ? "▾" : "▸"}</span>
           <span className="text-gray-500 shrink-0">📁</span>
@@ -194,6 +211,8 @@ function TreeNodeRow({
             toggleFolder={toggleFolder}
             onContextMenu={onContextMenu}
             onFolderContextMenu={onFolderContextMenu}
+            focusedPath={focusedPath}
+            onFocus={onFocus}
           />
         ))}
       </>
@@ -203,6 +222,7 @@ function TreeNodeRow({
   const file = node.file!;
   const isActive = activeFileId === file.id;
   const isDirty = dirtyTabs.has(file.id);
+  const isFocused = focusedPath === node.fullPath;
 
   if (renamingId === file.id) {
     return (
@@ -228,7 +248,7 @@ function TreeNodeRow({
 
   return (
     <div
-      className={`group flex items-center ${isActive ? "bg-gray-700" : "hover:bg-gray-800"}`}
+      className={`group flex items-center ${isActive ? "bg-gray-700" : "hover:bg-gray-800"} ${isFocused && !isActive ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
       style={{ paddingLeft: `${8 + indent}px` }}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file.id, file.path); }}
     >
@@ -236,12 +256,13 @@ function TreeNodeRow({
         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mr-1" title="Unsaved" />
       )}
       <button
-        onClick={() => onOpenFile(file.id)}
+        onClick={() => { onOpenFile(file.id); onFocus(node.fullPath); }}
         onDoubleClick={() => onStartRename(file.id, file.path)}
         className={`flex-1 text-left py-1.5 pr-2 text-xs truncate flex items-center gap-1 ${
           isActive ? "text-white" : "text-gray-400 hover:text-white"
         }`}
         title={file.updatedAt ? `${file.path}\nModified ${timeAgo(file.updatedAt)}` : file.path}
+        tabIndex={-1}
       >
         <FileIcon filename={node.name} />
         <span className="truncate">{node.name}</span>
@@ -250,6 +271,7 @@ function TreeNodeRow({
         onClick={(e) => onDeleteFile(file.id, e)}
         className="px-2 py-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs shrink-0"
         title="Delete file"
+        tabIndex={-1}
       >
         ×
       </button>
@@ -260,6 +282,7 @@ function TreeNodeRow({
 export default function FileTree(props: FileTreeProps) {
   const { files } = props;
   const tree = buildTree(files);
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
   const [copiedPath, setCopiedPath] = useState(false);
@@ -323,6 +346,65 @@ export default function FileTree(props: FileTreeProps) {
     });
   }
 
+  const flat = useMemo(() => flattenVisible(tree, expandedFolders), [tree, expandedFolders]);
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Delete", "Backspace"].indexOf(e.key) === -1) return;
+    e.preventDefault();
+
+    const idx = focusedPath ? flat.findIndex((n) => n.fullPath === focusedPath) : -1;
+    const node = flat[idx] ?? null;
+
+    switch (e.key) {
+      case "ArrowDown": {
+        const next = flat[idx + 1] ?? flat[0];
+        if (next) setFocusedPath(next.fullPath);
+        break;
+      }
+      case "ArrowUp": {
+        const prev = idx > 0 ? flat[idx - 1] : flat[flat.length - 1];
+        if (prev) setFocusedPath(prev.fullPath);
+        break;
+      }
+      case "ArrowRight": {
+        if (!node) { if (flat[0]) setFocusedPath(flat[0].fullPath); break; }
+        if (node.type === "folder") {
+          if (!expandedFolders.has(node.fullPath)) {
+            toggleFolder(node.fullPath);
+          } else {
+            const child = flat[idx + 1];
+            if (child) setFocusedPath(child.fullPath);
+          }
+        }
+        break;
+      }
+      case "ArrowLeft": {
+        if (!node) break;
+        if (node.type === "folder" && expandedFolders.has(node.fullPath)) {
+          toggleFolder(node.fullPath);
+        } else {
+          const parentPath = node.fullPath.includes("/")
+            ? node.fullPath.substring(0, node.fullPath.lastIndexOf("/"))
+            : null;
+          if (parentPath) setFocusedPath(parentPath);
+        }
+        break;
+      }
+      case "Enter": {
+        if (!node) break;
+        if (node.type === "folder") toggleFolder(node.fullPath);
+        else if (node.file) props.onOpenFile(node.file.id);
+        break;
+      }
+      case "Delete":
+      case "Backspace": {
+        if (!node || node.type !== "file" || !node.file) break;
+        props.onDeleteFile(node.file.id, { stopPropagation: () => {} } as React.MouseEvent);
+        break;
+      }
+    }
+  }
+
   const handleContextMenu = useCallback((e: React.MouseEvent, fileId: string, filePath: string) => {
     setContextMenu({ fileId, filePath, x: e.clientX, y: e.clientY });
     setFolderContextMenu(null);
@@ -340,7 +422,13 @@ export default function FileTree(props: FileTreeProps) {
   const ITEM = "w-full text-left px-3 py-1.5 text-xs hover:bg-gray-700 transition-colors";
 
   return (
-    <div className="flex-1 overflow-auto relative">
+    <div
+      className="flex-1 overflow-auto relative focus:outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onFocus={() => { if (!focusedPath && flat.length > 0) setFocusedPath(flat[0].fullPath); }}
+      aria-label="File tree"
+    >
       {tree.map((node) => (
         <TreeNodeRow
           key={node.fullPath}
@@ -351,6 +439,8 @@ export default function FileTree(props: FileTreeProps) {
           toggleFolder={toggleFolder}
           onContextMenu={handleContextMenu}
           onFolderContextMenu={handleFolderContextMenu}
+          focusedPath={focusedPath}
+          onFocus={setFocusedPath}
         />
       ))}
 
