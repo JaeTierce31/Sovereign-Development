@@ -203,6 +203,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const isDraggingSplit = useRef(false);
   const [diffMode, setDiffMode] = useState(false);
   const savedContentRef = useRef<Map<string, string>>(new Map());
+  const [breadcrumbPopover, setBreadcrumbPopover] = useState<{ folderPath: string; x: number; y: number } | null>(null);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -511,6 +512,7 @@ function IDECore({ projectId }: { projectId: string }) {
         setGotoLineVal(String(cursorPos.line));
       } else if (e.key === "Escape") {
         if (tabContextMenu) { setTabContextMenu(null); return; }
+        if (breadcrumbPopover) { setBreadcrumbPopover(null); return; }
         if (gotoLineOpen) setGotoLineOpen(false);
         else if (inlineAiOpen) setInlineAiOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
@@ -526,7 +528,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -1015,12 +1017,19 @@ function IDECore({ projectId }: { projectId: string }) {
               <nav className="flex items-center gap-0.5 text-xs min-w-0 overflow-hidden" aria-label="File path">
                 {activeFile.path.split("/").map((segment, i, arr) => {
                   const isLast = i === arr.length - 1;
+                  const folderPath = arr.slice(0, i + 1).join("/");
                   return (
                     <span key={i} className="flex items-center gap-0.5 shrink-0">
                       {i > 0 && <span className="text-gray-700 select-none">/</span>}
-                      <span className={isLast ? "text-gray-200 font-medium" : "text-gray-500 hover:text-gray-300 transition-colors"}>
+                      <button
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setBreadcrumbPopover({ folderPath, x: rect.left, y: rect.bottom + 4 });
+                        }}
+                        className={`px-0.5 rounded transition-colors ${isLast ? "text-gray-200 font-medium hover:bg-gray-700/60" : "text-gray-500 hover:text-gray-300 hover:bg-gray-700/60"}`}
+                      >
                         {segment}
-                      </span>
+                      </button>
                     </span>
                   );
                 })}
@@ -1812,6 +1821,45 @@ function IDECore({ projectId }: { projectId: string }) {
           }}
         />
       )}
+      {breadcrumbPopover && (() => {
+        const { folderPath, x, y } = breadcrumbPopover;
+        const isFile = files.some((f) => f.path === folderPath);
+        const prefix = folderPath + "/";
+        const siblings = isFile
+          ? files.filter((f) => {
+              const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+              const activeDir = activeFile?.path.includes("/") ? activeFile.path.slice(0, activeFile.path.lastIndexOf("/")) : "";
+              return dir === activeDir;
+            })
+          : files.filter((f) => f.path === folderPath || f.path.startsWith(prefix));
+        return (
+          <div className="fixed inset-0 z-50" onMouseDown={() => setBreadcrumbPopover(null)}>
+            <div
+              className="absolute bg-gray-900 border border-gray-700 rounded-lg shadow-2xl py-1 min-w-48 max-w-72 max-h-72 overflow-auto text-xs"
+              style={{ top: y, left: x }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-1 text-gray-600 font-mono truncate border-b border-gray-800 mb-1">{folderPath}</div>
+              {siblings.length === 0 ? (
+                <div className="px-3 py-2 text-gray-600">No files</div>
+              ) : siblings.map((f) => {
+                const label = isFile
+                  ? f.path.split("/").pop() ?? f.path
+                  : f.path.slice(prefix.length);
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => { openFile(f.id); setBreadcrumbPopover(null); }}
+                    className={`w-full text-left px-3 py-1.5 font-mono truncate transition-colors ${f.id === activeFileId ? "text-blue-400 bg-blue-900/20" : "text-gray-300 hover:bg-gray-800 hover:text-white"}`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
