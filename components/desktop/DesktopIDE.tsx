@@ -138,6 +138,11 @@ function getSavedSidebarWidth(): number {
   return isNaN(v) ? SIDEBAR_DEFAULT : Math.min(Math.max(v, SIDEBAR_MIN), SIDEBAR_MAX);
 }
 
+const TERM_HEIGHT_KEY = "peregrine:term-height";
+const TERM_HEIGHT_MIN = 80;
+const TERM_HEIGHT_MAX = 700;
+const TERM_HEIGHT_DEFAULT = 280;
+
 function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -158,6 +163,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const isDraggingSidebar = useRef(false);
+  const [termHeightPx, setTermHeightPx] = useState(TERM_HEIGHT_DEFAULT);
+  const isDraggingTerm = useRef(false);
   const [mdPreview, setMdPreview] = useState(false);
   const [htmlPreview, setHtmlPreview] = useState(false);
   const [inlineAiOpen, setInlineAiOpen] = useState(false);
@@ -242,6 +249,39 @@ function IDECore({ projectId }: { projectId: string }) {
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    const saved = parseInt(localStorage.getItem(TERM_HEIGHT_KEY) ?? "", 10);
+    if (!isNaN(saved)) setTermHeightPx(Math.min(Math.max(saved, TERM_HEIGHT_MIN), TERM_HEIGHT_MAX));
+  }, []);
+
+  const startTermDrag = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingTerm.current = true;
+    const startY = e.clientY;
+    const startH = termHeightPx;
+
+    function onMove(ev: MouseEvent) {
+      if (!isDraggingTerm.current) return;
+      const next = Math.min(Math.max(startH + startY - ev.clientY, TERM_HEIGHT_MIN), TERM_HEIGHT_MAX);
+      setTermHeightPx(next);
+    }
+    function onUp() {
+      isDraggingTerm.current = false;
+      setTermHeightPx((h) => {
+        try { localStorage.setItem(TERM_HEIGHT_KEY, String(h)); } catch { /* ignore */ }
+        return h;
+      });
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  }, [termHeightPx]);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -988,7 +1028,7 @@ function IDECore({ projectId }: { projectId: string }) {
         </div>
 
         {/* Editor + AI panel */}
-        <div className="flex min-h-0" style={{ flex: termOpen ? "0 0 60%" : "1 1 0" }}>
+        <div className="flex min-h-0" style={{ flex: "1 1 0", minHeight: 0 }}>
           <div className="flex min-w-0 flex-1" style={{ minHeight: 0 }}>
             <div className={(mdPreview && activeFile?.path.endsWith(".md")) || (htmlPreview && activeFile?.path.endsWith(".html")) ? "w-1/2 min-w-0" : "flex-1 min-w-0"}>
               {activeFile ? (
@@ -1075,7 +1115,13 @@ function IDECore({ projectId }: { projectId: string }) {
 
         {/* Terminal panel */}
         {termOpen && (
-          <div className="shrink-0" style={{ height: "40%" }}>
+          <div className="shrink-0 flex flex-col" style={{ height: `${termHeightPx}px` }}>
+            {/* Drag handle */}
+            <div
+              onMouseDown={startTermDrag}
+              className="h-1 shrink-0 cursor-row-resize hover:bg-blue-500/40 bg-gray-800 transition-colors"
+              title="Drag to resize terminal"
+            />
             <ExecutionPanel
               files={files}
               activeFile={activeFile}
