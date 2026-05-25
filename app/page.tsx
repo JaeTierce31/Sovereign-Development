@@ -2,9 +2,13 @@ import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { SignUpButton, SignInButton } from '@clerk/nextjs';
+import { headers } from 'next/headers';
+import MobileHome from '@/components/mobile/MobileHome';
 
 export default async function Home() {
   const { userId } = await auth();
+  const ua = (await headers()).get('user-agent') ?? '';
+  if (/Mobile|Android|iPhone|iPad|iPod/i.test(ua)) return <MobileHome />;
   if (userId) redirect('/dashboard');
 
   return (

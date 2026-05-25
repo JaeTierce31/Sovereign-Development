@@ -264,7 +264,7 @@ export default function MobileHome() {
                 ×
               </button>
             </div>
-            {/* Template chips — horizontal scroll */}
+            {/* Template chips */}
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
               {TEMPLATES.map((t) => (
                 <button
@@ -304,10 +304,7 @@ export default function MobileHome() {
         ) : sorted.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-gray-500 text-sm">No match for &ldquo;{search}&rdquo;</p>
-            <button
-              onClick={() => setSearch("")}
-              className="mt-2 text-blue-400 text-sm"
-            >
+            <button onClick={() => setSearch("")} className="mt-2 text-blue-400 text-sm">
               Clear filter
             </button>
           </div>

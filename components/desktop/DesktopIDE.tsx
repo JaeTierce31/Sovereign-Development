@@ -24,10 +24,12 @@ interface EditorPrefs {
   minimap: boolean;
   theme: "vs-dark" | "light";
   stickyScroll: boolean;
+  ruler: 80 | 120 | null;
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null };
+const TAB_SIZES = [2, 4, 8] as const;
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
 
@@ -784,6 +786,7 @@ function IDECore({ projectId }: { projectId: string }) {
                     automaticLayout: true,
                     wordWrap: prefs.wordWrap,
                     stickyScroll: { enabled: prefs.stickyScroll },
+                    rulers: prefs.ruler ? [prefs.ruler] : [],
                     scrollBeyondLastLine: false,
                     smoothScrolling: true,
                     cursorSmoothCaretAnimation: "on",
@@ -886,6 +889,16 @@ function IDECore({ projectId }: { projectId: string }) {
             {activeFile && (
               <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
             )}
+            <button
+              onClick={() => setPrefs((p) => {
+                const next = TAB_SIZES[(TAB_SIZES.indexOf(p.tabSize as 2 | 4 | 8) + 1) % TAB_SIZES.length];
+                return { ...p, tabSize: next };
+              })}
+              className="hover:text-white transition-colors tabular-nums"
+              title={`Tab size: ${prefs.tabSize} (click to cycle)`}
+            >
+              {prefs.tabSize} spc
+            </button>
             <button
               onClick={() => setPrefs((p) => ({ ...p, wordWrap: p.wordWrap === "on" ? "off" : "on" }))}
               className={`transition-colors ${prefs.wordWrap === "on" ? "text-blue-400 hover:text-blue-300" : "hover:text-white"}`}
@@ -1127,6 +1140,25 @@ function IDECore({ projectId }: { projectId: string }) {
                 >
                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${prefs.stickyScroll ? "translate-x-4" : "translate-x-0.5"}`} />
                 </button>
+              </div>
+              {/* Column ruler */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Column ruler</label>
+                <div className="flex gap-1">
+                  {([null, 80, 120] as const).map((v) => (
+                    <button
+                      key={String(v)}
+                      onClick={() => setPrefs((p) => ({ ...p, ruler: v }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                        prefs.ruler === v
+                          ? "border-blue-500 bg-blue-600/20 text-blue-300"
+                          : "border-gray-700 text-gray-400 hover:border-gray-500"
+                      }`}
+                    >
+                      {v === null ? "Off" : v}
+                    </button>
+                  ))}
+                </div>
               </div>
               {/* Theme */}
               <div className="flex items-center justify-between">
