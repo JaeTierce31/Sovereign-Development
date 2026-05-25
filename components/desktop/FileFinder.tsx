@@ -13,17 +13,99 @@ interface FileFinderProps {
   openTabs?: string[];
 }
 
-function highlight(path: string, query: string) {
-  if (!query) return <span>{path}</span>;
-  const idx = path.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return <span>{path}</span>;
-  return (
-    <>
-      <span>{path.slice(0, idx)}</span>
-      <span className="text-blue-300 font-semibold">{path.slice(idx, idx + query.length)}</span>
-      <span>{path.slice(idx + query.length)}</span>
-    </>
-  );
+interface FuzzyMatch {
+  file: ProjectFile;
+  score: number;
+  indices: number[]; // matched char positions in path
+  isRecent?: boolean;
+}
+
+function fuzzyMatch(path: string, query: string): { score: number; indices: number[] } | null {
+  if (!query) return { score: 0, indices: [] };
+
+  const lPath = path.toLowerCase();
+  const lQuery = query.toLowerCase();
+
+  let pi = 0; // path index
+  const indices: number[] = [];
+
+  for (let qi = 0; qi < lQuery.length; qi++) {
+    const ch = lQuery[qi];
+    const found = lPath.indexOf(ch, pi);
+    if (found === -1) return null;
+    indices.push(found);
+    pi = found + 1;
+  }
+
+  // Score: higher is better
+  let score = 0;
+  const filename = path.split("/").pop()!.toLowerCase();
+
+  // Bonus: all matches are in the filename part
+  const filenameStart = path.length - filename.length;
+  const allInFilename = indices.every((i) => i >= filenameStart);
+  if (allInFilename) score += 30;
+
+  // Bonus: query matches start of filename
+  if (filename.startsWith(lQuery.slice(0, 2))) score += 20;
+
+  // Bonus for consecutive matches
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === indices[i - 1] + 1) score += 8;
+  }
+
+  // Bonus for matches at word boundaries (/, -, _, ., uppercase transitions)
+  for (const idx of indices) {
+    if (idx === 0) { score += 5; continue; }
+    const prev = path[idx - 1];
+    if (/[\/\-_.]/.test(prev)) score += 5;
+    // camelCase boundary
+    if (/[a-z]/.test(prev) && /[A-Z]/.test(path[idx])) score += 3;
+  }
+
+  // Penalty for distance (spread-out matches rank lower)
+  const spread = indices[indices.length - 1] - indices[0];
+  score -= spread * 0.1;
+
+  // Penalty for longer paths
+  score -= path.length * 0.05;
+
+  return { score, indices };
+}
+
+function FuzzyHighlight({ path, indices }: { path: string; indices: number[] }) {
+  if (indices.length === 0) return <span>{path}</span>;
+  const matched = new Set(indices);
+  const parts: React.ReactNode[] = [];
+
+  let buf = "";
+  let inMatch = false;
+
+  for (let i = 0; i < path.length; i++) {
+    const isM = matched.has(i);
+    if (isM !== inMatch) {
+      if (buf) {
+        parts.push(
+          inMatch
+            ? <span key={i} className="text-blue-300 font-semibold">{buf}</span>
+            : <span key={i}>{buf}</span>
+        );
+      }
+      buf = path[i];
+      inMatch = isM;
+    } else {
+      buf += path[i];
+    }
+  }
+  if (buf) {
+    parts.push(
+      inMatch
+        ? <span key="last-m" className="text-blue-300 font-semibold">{buf}</span>
+        : <span key="last">{buf}</span>
+    );
+  }
+
+  return <>{parts}</>;
 }
 
 export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: FileFinderProps) {
@@ -36,23 +118,27 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
     inputRef.current?.focus();
   }, []);
 
-  // When no query: show open tabs first (most recently active last = reverse order),
-  // then remaining files not yet in tabs.
-  const matches = useMemo<(ProjectFile & { isRecent?: boolean })[]>(() => {
-    if (query.trim()) {
-      return files.filter((f) => f.path.toLowerCase().includes(query.toLowerCase()));
-    }
-    return [
-      ...openTabs
+  const matches = useMemo<FuzzyMatch[]>(() => {
+    if (!query.trim()) {
+      // No query: open tabs first (most-recently activated = last in array → reversed), then all others
+      const tabFiles = openTabs
         .slice()
         .reverse()
         .map((id) => files.find((f) => f.id === id))
         .filter((f): f is ProjectFile => !!f)
-        .map((f) => ({ ...f, isRecent: true })),
-      ...files
+        .map((f) => ({ file: f, score: 0, indices: [], isRecent: true }));
+      const rest = files
         .filter((f) => !openTabs.includes(f.id))
-        .map((f) => ({ ...f, isRecent: false })),
-    ];
+        .map((f) => ({ file: f, score: 0, indices: [], isRecent: false }));
+      return [...tabFiles, ...rest];
+    }
+
+    const results: FuzzyMatch[] = [];
+    for (const f of files) {
+      const m = fuzzyMatch(f.path, query.trim());
+      if (m) results.push({ file: f, score: m.score, indices: m.indices });
+    }
+    return results.sort((a, b) => b.score - a.score);
   }, [query, files, openTabs]);
 
   useEffect(() => {
@@ -61,8 +147,8 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
 
   const confirm = useCallback(
     (idx: number) => {
-      const file = matches[idx];
-      if (file) { onSelect(file.id); onClose(); }
+      const m = matches[idx];
+      if (m) { onSelect(m.file.id); onClose(); }
     },
     [matches, onSelect, onClose]
   );
@@ -86,9 +172,8 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
     item?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
-  // Find where non-recent files start (for the divider)
   const firstNonRecentIdx = !query.trim()
-    ? matches.findIndex((f) => !f.isRecent)
+    ? matches.findIndex((m) => !m.isRecent)
     : -1;
 
   return (
@@ -107,7 +192,7 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Go to file…"
+            placeholder="Go to file… (fuzzy)"
             className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none"
           />
           {query && (
@@ -126,13 +211,21 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
           {matches.length === 0 ? (
             <div className="px-4 py-6 text-center text-xs text-gray-600">No matching files</div>
           ) : (
-            matches.map((f, i) => {
-              const parts = f.path.split("/");
-              const filename = parts.pop() ?? f.path;
+            matches.map((m, i) => {
+              const parts = m.file.path.split("/");
+              const filename = parts.pop() ?? m.file.path;
               const dir = parts.join("/");
               const showDivider = i === firstNonRecentIdx && firstNonRecentIdx > 0;
+
+              // For fuzzy highlight: compute per-path indices
+              const filenameStart = m.file.path.length - filename.length;
+              const fileIndices = m.indices
+                .filter((idx) => idx >= filenameStart)
+                .map((idx) => idx - filenameStart);
+              const dirIndices = m.indices.filter((idx) => idx < filenameStart);
+
               return (
-                <div key={f.id}>
+                <div key={m.file.id}>
                   {showDivider && (
                     <div className="px-4 pt-2 pb-1">
                       <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">All files</span>
@@ -145,10 +238,16 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
                       i === selected ? "bg-blue-600/20 text-white" : "text-gray-300 hover:bg-gray-800"
                     }`}
                   >
-                    <span className="text-sm truncate">
-                      {query ? highlight(filename, query) : filename}
+                    <span className="text-sm truncate flex-1 min-w-0">
+                      {query ? (
+                        <FuzzyHighlight path={filename} indices={fileIndices} />
+                      ) : filename}
                     </span>
-                    {dir && <span className="text-xs text-gray-500 truncate">{dir}</span>}
+                    {dir && (
+                      <span className="text-xs text-gray-500 truncate shrink-0">
+                        {query ? <FuzzyHighlight path={dir} indices={dirIndices} /> : dir}
+                      </span>
+                    )}
                   </button>
                 </div>
               );
@@ -160,6 +259,9 @@ export default function FileFinder({ files, onSelect, onClose, openTabs = [] }: 
           <span>↑↓ navigate</span>
           <span>↵ open</span>
           <span>Esc close</span>
+          {query && matches.length > 0 && (
+            <span className="ml-auto">{matches.length} match{matches.length !== 1 ? "es" : ""}</span>
+          )}
         </div>
       </div>
     </div>
