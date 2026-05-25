@@ -62,6 +62,70 @@ function inferLanguage(path: string): string {
 }
 
 const RUNNABLE_EXTS = new Set(["js", "mjs", "cjs", "ts", "tsx", "py", "sh"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "svg"]);
+const IMAGE_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp", ico: "image/x-icon",
+  bmp: "image/bmp", svg: "image/svg+xml",
+};
+
+function ImageViewer({ file, ext }: { file: { path: string; content: string | null }; ext: string }) {
+  const [copied, setCopied] = useState(false);
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+
+  const src = (() => {
+    const c = file.content ?? "";
+    if (!c) return null;
+    if (c.startsWith("data:")) return c;
+    if (ext === "svg") return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(c)}`;
+    const mime = IMAGE_MIME[ext] ?? "image/png";
+    return `data:${mime};base64,${c}`;
+  })();
+
+  if (!src) return (
+    <div className="flex items-center justify-center h-full text-gray-600 text-sm">No image data</div>
+  );
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full bg-gray-950 gap-3 p-8 select-none overflow-auto">
+      <div
+        className="relative rounded border border-gray-800 overflow-hidden"
+        style={{
+          backgroundImage: "linear-gradient(45deg,#1a1a1a 25%,transparent 25%),linear-gradient(-45deg,#1a1a1a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1a1a 75%),linear-gradient(-45deg,transparent 75%,#1a1a1a 75%)",
+          backgroundSize: "16px 16px",
+          backgroundPosition: "0 0,0 8px,8px -8px,-8px 0",
+          backgroundColor: "#141414",
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={file.path}
+          className="max-w-[calc(100vw-320px)] max-h-[calc(100vh-240px)] object-contain block"
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+          }}
+        />
+      </div>
+      <div className="flex items-center gap-4 text-xs text-gray-500">
+        <span className="font-mono">{file.path.split("/").pop()}</span>
+        {imgSize && <span>{imgSize.w} × {imgSize.h}px</span>}
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(src).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }).catch(() => {});
+          }}
+          className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded transition-colors"
+        >
+          {copied ? "Copied!" : "Copy data URL"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
@@ -490,9 +554,20 @@ function IDECore({ projectId }: { projectId: string }) {
   }
 
   async function uploadFiles(fileList: FileList) {
-    const uploads = Array.from(fileList).filter((f) => f.size < 1_000_000);
+    const uploads = Array.from(fileList).filter((f) => f.size < 5_000_000);
     for (const file of uploads) {
-      const content = await file.text();
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!IMAGE_EXTS.has(ext) && file.size >= 1_000_000) continue;
+      let content: string;
+      if (IMAGE_EXTS.has(ext)) {
+        content = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string ?? "");
+          reader.readAsDataURL(file);
+        });
+      } else {
+        content = await file.text();
+      }
       const res = await fetch(`/api/projects/${projectId}/files`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -511,8 +586,9 @@ function IDECore({ projectId }: { projectId: string }) {
     }
   }
 
-  const activeExt = activeFile?.path.split(".").pop() ?? "";
+  const activeExt = (activeFile?.path.split(".").pop() ?? "").toLowerCase();
   const isRunnable = RUNNABLE_EXTS.has(activeExt);
+  const isImageFile = IMAGE_EXTS.has(activeExt);
 
   async function toggleShare() {
     const next = !isPublic;
@@ -866,35 +942,39 @@ function IDECore({ projectId }: { projectId: string }) {
           <div className="flex min-w-0 flex-1" style={{ minHeight: 0 }}>
             <div className={(mdPreview && activeFile?.path.endsWith(".md")) || (htmlPreview && activeFile?.path.endsWith(".html")) ? "w-1/2 min-w-0" : "flex-1 min-w-0"}>
               {activeFile ? (
-                <Editor
-                  key={activeFile.id}
-                  height="100%"
-                  language={activeFile.language ?? inferLanguage(activeFile.path)}
-                  value={activeFile.content ?? ""}
-                  theme={prefs.theme}
-                  onChange={handleChange}
-                  onMount={(editor) => {
-                    editorInstanceRef.current = editor;
-                    setCursorPos({ line: 1, col: 1 });
-                    editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
-                      setCursorPos({ line: e.position.lineNumber, col: e.position.column });
-                    });
-                  }}
-                  options={{
-                    fontSize: prefs.fontSize,
-                    tabSize: prefs.tabSize,
-                    minimap: { enabled: prefs.minimap },
-                    automaticLayout: true,
-                    wordWrap: prefs.wordWrap,
-                    stickyScroll: { enabled: prefs.stickyScroll },
-                    rulers: prefs.ruler ? [prefs.ruler] : [],
-                    scrollBeyondLastLine: false,
-                    smoothScrolling: true,
-                    cursorSmoothCaretAnimation: "on",
-                    renderLineHighlight: "all",
-                    padding: { top: 8, bottom: 8 },
-                  }}
-                />
+                isImageFile ? (
+                  <ImageViewer file={activeFile} ext={activeExt} />
+                ) : (
+                  <Editor
+                    key={activeFile.id}
+                    height="100%"
+                    language={activeFile.language ?? inferLanguage(activeFile.path)}
+                    value={activeFile.content ?? ""}
+                    theme={prefs.theme}
+                    onChange={handleChange}
+                    onMount={(editor) => {
+                      editorInstanceRef.current = editor;
+                      setCursorPos({ line: 1, col: 1 });
+                      editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
+                        setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+                      });
+                    }}
+                    options={{
+                      fontSize: prefs.fontSize,
+                      tabSize: prefs.tabSize,
+                      minimap: { enabled: prefs.minimap },
+                      automaticLayout: true,
+                      wordWrap: prefs.wordWrap,
+                      stickyScroll: { enabled: prefs.stickyScroll },
+                      rulers: prefs.ruler ? [prefs.ruler] : [],
+                      scrollBeyondLastLine: false,
+                      smoothScrolling: true,
+                      cursorSmoothCaretAnimation: "on",
+                      renderLineHighlight: "all",
+                      padding: { top: 8, bottom: 8 },
+                    }}
+                  />
+                )
               ) : (
                 !loading && (
                   <div className="flex items-center justify-center h-full text-gray-600 text-sm">
