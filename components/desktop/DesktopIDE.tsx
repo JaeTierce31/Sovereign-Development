@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import Editor from "@monaco-editor/react";
+import Editor, { DiffEditor } from "@monaco-editor/react";
 import JSZip from "jszip";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
@@ -201,6 +201,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [splitFileId, setSplitFileId] = useState<string | null>(null);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const isDraggingSplit = useRef(false);
+  const [diffMode, setDiffMode] = useState(false);
+  const savedContentRef = useRef<Map<string, string>>(new Map());
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -271,6 +273,8 @@ function IDECore({ projectId }: { projectId: string }) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefs.keymap, editorReady]);
+
+  useEffect(() => { setDiffMode(false); }, [activeFileId]);
 
   const startSidebarDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -365,6 +369,7 @@ function IDECore({ projectId }: { projectId: string }) {
       .then((data: ProjectFile[] | null) => {
         if (!data) return;
         setFiles(data);
+        data.forEach((f) => { if (f.content !== null) savedContentRef.current.set(f.id, f.content); });
         const validIds = new Set(data.map((f) => f.id));
         let saved: { activeFileId: string | null; openTabs: string[] } | null = null;
         try {
@@ -561,6 +566,7 @@ function IDECore({ projectId }: { projectId: string }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: value }),
         }).then(() => {
+          savedContentRef.current.set(activeFileId, value);
           setFiles((prev) => prev.map((f) => f.id === activeFileId ? { ...f, updatedAt: savedAt } : f));
           setSaveStatus("saved");
           if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
@@ -583,6 +589,7 @@ function IDECore({ projectId }: { projectId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: value }),
       }).then(() => {
+        savedContentRef.current.set(splitFileId, value);
         const savedAt = Date.now();
         setFiles((prev) => prev.map((f) => f.id === splitFileId ? { ...f, updatedAt: savedAt } : f));
         setDirtyTabs((prev) => { const next = new Set(prev); next.delete(splitFileId); return next; });
@@ -1090,6 +1097,19 @@ function IDECore({ projectId }: { projectId: string }) {
                 {formatError ? "✗ Invalid JSON" : "{ } Format"}
               </button>
             )}
+            {activeFile && !isImageFile && savedContentRef.current.has(activeFileId!) && (
+              <button
+                onClick={() => setDiffMode((v) => !v)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  diffMode
+                    ? "bg-orange-600/30 text-orange-300 border border-orange-700/50"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title={diffMode ? "Exit diff view" : "Show changes (diff vs saved)"}
+              >
+                ± Diff
+              </button>
+            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
@@ -1148,6 +1168,31 @@ function IDECore({ projectId }: { projectId: string }) {
                   {activeFile ? (
                     isImageFile ? (
                       <ImageViewer file={activeFile} ext={activeExt} />
+                    ) : diffMode ? (
+                      <DiffEditor
+                        key={`diff-${activeFile.id}`}
+                        height="100%"
+                        language={activeFile.language ?? inferLanguage(activeFile.path)}
+                        original={savedContentRef.current.get(activeFile.id) ?? ""}
+                        modified={activeFile.content ?? ""}
+                        theme={prefs.theme}
+                        options={{
+                          fontSize: prefs.fontSize,
+                          readOnly: false,
+                          automaticLayout: true,
+                          wordWrap: prefs.wordWrap,
+                          scrollBeyondLastLine: false,
+                          smoothScrolling: true,
+                          padding: { top: 8, bottom: 8 },
+                          renderSideBySide: true,
+                        }}
+                        onMount={(diff) => {
+                          const mod = diff.getModifiedEditor();
+                          mod.onDidChangeModelContent(() => {
+                            handleChange(mod.getValue());
+                          });
+                        }}
+                      />
                     ) : (
                       <Editor
                         key={activeFile.id}
