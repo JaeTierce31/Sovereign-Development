@@ -382,6 +382,14 @@ export default function MobileHome() {
                         >
                           {p.isPublic ? "Copy link" : "Share"}
                         </button>
+                        <a
+                          href={`/api/projects/${p.id}/export`}
+                          download
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex-1 py-2.5 text-xs text-gray-300 active:bg-gray-700 transition-colors border-l border-gray-700 text-center"
+                        >
+                          Export
+                        </a>
                         <button
                           onClick={() => handleDuplicate(p.id)}
                           className="flex-1 py-2.5 text-xs text-gray-300 active:bg-gray-700 transition-colors border-l border-gray-700"

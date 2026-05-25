@@ -575,6 +575,14 @@ function IDECore({ projectId }: { projectId: string }) {
             >
               {isPublic ? "⬤ Shared" : "Share"}
             </button>
+            <a
+              href={`/api/projects/${projectId}/export`}
+              download
+              className="text-gray-500 hover:text-gray-300 transition-colors text-sm leading-none"
+              title="Download project as ZIP"
+            >
+              ↓
+            </a>
             <button
               onClick={() => setProjectSettingsOpen(true)}
               className="text-gray-500 hover:text-gray-300 transition-colors text-sm leading-none"

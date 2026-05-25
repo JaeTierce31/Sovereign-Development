@@ -151,6 +151,15 @@ function ProjectCard({
           >
             ✎
           </button>
+          <a
+            href={`/api/projects/${project.id}/export`}
+            download
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 text-gray-500 hover:text-gray-200 rounded transition-colors text-xs"
+            title="Download project as ZIP"
+          >
+            ↓
+          </a>
           <button
             onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
             className="p-1 text-gray-500 hover:text-gray-200 rounded transition-colors text-xs"
