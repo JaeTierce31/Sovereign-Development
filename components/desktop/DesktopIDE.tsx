@@ -64,6 +64,12 @@ function inferLanguage(path: string): string {
 }
 
 const RUNNABLE_EXTS = new Set(["js", "mjs", "cjs", "ts", "tsx", "py", "sh"]);
+
+function getFilename(path: string) { return path.split("/").pop() ?? path; }
+function getFileExt(path: string) { return (path.split(".").pop() ?? "").toLowerCase(); }
+
+const TEMPLATE_EXTS = new Set(["ts","tsx","jsx","js","py","sh","css","html","md","json","toml","yaml","yml","sql","rs","go","java","rb","php","swift","kt"]);
+const TEMPLATE_FILENAMES = new Set(["package.json",".gitignore",".env","Dockerfile","docker-compose.yml","README.md","tsconfig.json"]);
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "svg"]);
 const IMAGE_MIME: Record<string, string> = {
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
@@ -602,14 +608,16 @@ function IDECore({ projectId }: { projectId: string }) {
 
   async function createFile(e: React.FormEvent) {
     e.preventDefault();
-    if (!newFileName.trim()) return;
+    const trimmed = newFileName.trim();
+    if (!trimmed) return;
     const res = await fetch(`/api/projects/${projectId}/files`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: newFileName.trim() }),
+      body: JSON.stringify({ path: trimmed }),
     });
     if (res.ok) {
       const file: ProjectFile = await res.json();
+      if (file.content !== null) savedContentRef.current.set(file.id, file.content);
       setFiles((prev) => [...prev, file]);
       openFile(file.id);
       setNewFileName("");
@@ -898,6 +906,14 @@ function IDECore({ projectId }: { projectId: string }) {
               onKeyDown={(e) => e.key === "Escape" && (setShowNewFile(false), setNewFileName(""))}
               onBlur={() => { if (!newFileName.trim()) { setShowNewFile(false); } }}
             />
+            {(() => {
+              const trimmed = newFileName.trim();
+              if (!trimmed) return null;
+              const hasTemplate = TEMPLATE_EXTS.has(getFileExt(trimmed)) || TEMPLATE_FILENAMES.has(getFilename(trimmed));
+              return hasTemplate ? (
+                <p className="text-xs text-blue-400/70 mt-1 px-0.5">✦ Template will be applied</p>
+              ) : null;
+            })()}
           </form>
         )}
 
