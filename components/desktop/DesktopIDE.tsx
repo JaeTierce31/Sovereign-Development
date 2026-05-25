@@ -25,10 +25,11 @@ interface EditorPrefs {
   theme: "vs-dark" | "light";
   stickyScroll: boolean;
   ruler: 80 | 120 | null;
+  keymap: "default" | "vim";
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default" };
 const TAB_SIZES = [2, 4, 8] as const;
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
@@ -171,6 +172,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const [inlineAiOpen, setInlineAiOpen] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
   const editorInstanceRef = useRef<unknown>(null);
+  const vimModeRef = useRef<{ dispose: () => void } | null>(null);
+  const vimStatusRef = useRef<HTMLDivElement>(null);
+  const [editorReady, setEditorReady] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -241,6 +245,29 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     try { localStorage.setItem(getPinnedKey(projectId), JSON.stringify([...pinnedTabs])); } catch { /* ignore */ }
   }, [pinnedTabs, projectId]);
+
+  useEffect(() => {
+    if (!editorReady || !editorInstanceRef.current) return;
+    let cancelled = false;
+    vimModeRef.current?.dispose();
+    vimModeRef.current = null;
+    if (prefs.keymap === "vim") {
+      const editor = editorInstanceRef.current;
+      import("monaco-vim").then(({ initVimMode }) => {
+        if (cancelled) return;
+        vimModeRef.current = initVimMode(
+          editor as Parameters<typeof initVimMode>[0],
+          vimStatusRef.current!
+        );
+      });
+    }
+    return () => {
+      cancelled = true;
+      vimModeRef.current?.dispose();
+      vimModeRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs.keymap, editorReady]);
 
   const startSidebarDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1068,11 +1095,14 @@ function IDECore({ projectId }: { projectId: string }) {
                     theme={prefs.theme}
                     onChange={handleChange}
                     onMount={(editor) => {
+                      vimModeRef.current?.dispose();
+                      vimModeRef.current = null;
                       editorInstanceRef.current = editor;
                       setCursorPos({ line: 1, col: 1 });
                       editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
                         setCursorPos({ line: e.position.lineNumber, col: e.position.column });
                       });
+                      setEditorReady((v) => !v); // toggle to trigger the vim effect
                     }}
                     options={{
                       fontSize: prefs.fontSize,
@@ -1230,6 +1260,14 @@ function IDECore({ projectId }: { projectId: string }) {
             >
               {prefs.theme === "vs-dark" ? "dark" : "light"}
             </button>
+            <button
+              onClick={() => setPrefs((p) => ({ ...p, keymap: p.keymap === "vim" ? "default" : "vim" }))}
+              className={`transition-colors ${prefs.keymap === "vim" ? "text-yellow-400 hover:text-yellow-300" : "hover:text-white"}`}
+              title={`Keybindings: ${prefs.keymap} (click to toggle)`}
+            >
+              {prefs.keymap === "vim" ? "vim" : "kbd"}
+            </button>
+            <div ref={vimStatusRef} className="font-mono text-yellow-400 text-xs" />
             <span className="flex items-center gap-1">
               <button
                 onClick={() => setPrefs((p) => ({ ...p, fontSize: Math.max(10, p.fontSize - 1) }))}
