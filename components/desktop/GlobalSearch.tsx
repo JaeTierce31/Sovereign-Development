@@ -33,6 +33,9 @@ export default function GlobalSearch({
   const [query, setQuery] = useState("");
   const [replaceText, setReplaceText] = useState("");
   const [showReplace, setShowReplace] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [regexError, setRegexError] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [replacing, setReplacing] = useState(false);
@@ -47,21 +50,26 @@ export default function GlobalSearch({
     if (showReplace) setTimeout(() => replaceRef.current?.focus(), 0);
   }, [showReplace]);
 
+  const minLen = useRegex ? 1 : 2;
+
   const search = useCallback(
-    (q: string) => {
+    (q: string, regex: boolean, cs: boolean) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       setReplacedCount(null);
-      if (!q.trim() || q.length < 2) { setResults([]); return; }
+      setRegexError(false);
+      if (!q.trim() || q.length < (regex ? 1 : 2)) { setResults([]); return; }
 
       debounceRef.current = setTimeout(async () => {
         setLoading(true);
         try {
-          const res = await fetch(
-            `/api/projects/${projectId}/search?q=${encodeURIComponent(q)}`
-          );
+          const url = `/api/projects/${projectId}/search?q=${encodeURIComponent(q)}${regex ? "&regex=1" : ""}${cs ? "&cs=1" : ""}`;
+          const res = await fetch(url);
           if (res.ok) {
             const data = await res.json();
             setResults(data.results ?? []);
+          } else if (res.status === 400) {
+            setRegexError(true);
+            setResults([]);
           }
         } finally {
           setLoading(false);
@@ -72,8 +80,8 @@ export default function GlobalSearch({
   );
 
   useEffect(() => {
-    search(query);
-  }, [query, search]);
+    search(query, useRegex, caseSensitive);
+  }, [query, useRegex, caseSensitive, search]);
 
   const grouped: GroupedResults[] = [];
   for (const r of results) {
@@ -95,10 +103,16 @@ export default function GlobalSearch({
     );
   }
 
-  async function replaceInFile(fileId: string, matchQuery: string, replacement: string): Promise<number> {
+  function buildReplaceRegex(q: string): RegExp {
+    const pattern = useRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(pattern, caseSensitive ? "g" : "gi");
+  }
+
+  async function replaceInFile(fileId: string, replacement: string): Promise<number> {
     const file = files.find((f) => f.id === fileId);
     if (!file || !file.content) return 0;
-    const regex = new RegExp(matchQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    let regex: RegExp;
+    try { regex = buildReplaceRegex(query); } catch { return 0; }
     const count = (file.content.match(regex) ?? []).length;
     if (count === 0) return 0;
     const newContent = file.content.replace(regex, replacement);
@@ -115,7 +129,7 @@ export default function GlobalSearch({
     if (!query || replaceText === "") return;
     setReplacing(true);
     try {
-      const n = await replaceInFile(fileId, query, replaceText);
+      const n = await replaceInFile(fileId, replaceText);
       setReplacedCount((prev) => (prev ?? 0) + n);
       setResults((prev) => prev.filter((r) => r.fileId !== fileId));
     } finally {
@@ -130,7 +144,7 @@ export default function GlobalSearch({
     try {
       const fileIds = [...new Set(results.map((r) => r.fileId))];
       for (const fid of fileIds) {
-        total += await replaceInFile(fid, query, replaceText);
+        total += await replaceInFile(fid, replaceText);
       }
       setReplacedCount(total);
       setResults([]);
@@ -139,6 +153,16 @@ export default function GlobalSearch({
     }
   }
 
+  const ToggleBtn = ({ active, onClick, title, children }: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) => (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`px-1.5 py-0.5 text-xs rounded font-mono transition-colors shrink-0 ${active ? "bg-blue-600/40 text-blue-300 border border-blue-600/50" : "text-gray-600 hover:text-gray-300 border border-transparent"}`}
+    >
+      {children}
+    </button>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/60" onClick={onClose}>
       <div
@@ -146,7 +170,7 @@ export default function GlobalSearch({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search row */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-700">
+        <div className={`flex items-center gap-2 px-4 py-3 border-b ${regexError ? "border-red-800" : "border-gray-700"}`}>
           <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
@@ -154,16 +178,19 @@ export default function GlobalSearch({
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search across all files…"
-            className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none"
+            placeholder={useRegex ? "Search with regex…" : "Search across all files…"}
+            className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none min-w-0"
             onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
           />
-          {loading && <span className="text-gray-600 text-xs">Searching…</span>}
-          {!loading && query.length >= 2 && replacedCount === null && (
-            <span className="text-gray-600 text-xs">{results.length} match{results.length !== 1 ? "es" : ""}</span>
+          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Case sensitive">Aa</ToggleBtn>
+          <ToggleBtn active={useRegex} onClick={() => setUseRegex((v) => !v)} title="Use regex">.*</ToggleBtn>
+          {loading && <span className="text-gray-600 text-xs shrink-0">Searching…</span>}
+          {regexError && <span className="text-red-500 text-xs shrink-0">Bad regex</span>}
+          {!loading && !regexError && query.length >= minLen && replacedCount === null && (
+            <span className="text-gray-600 text-xs shrink-0">{results.length} match{results.length !== 1 ? "es" : ""}</span>
           )}
           {replacedCount !== null && (
-            <span className="text-green-500 text-xs">{replacedCount} replaced</span>
+            <span className="text-green-500 text-xs shrink-0">{replacedCount} replaced</span>
           )}
           <button
             onClick={() => setShowReplace((v) => !v)}
@@ -184,7 +211,7 @@ export default function GlobalSearch({
               ref={replaceRef}
               value={replaceText}
               onChange={(e) => setReplaceText(e.target.value)}
-              placeholder="Replace with…"
+              placeholder={useRegex ? "Replace (supports $1 capture groups)…" : "Replace with…"}
               className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none"
               onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
             />
@@ -202,16 +229,21 @@ export default function GlobalSearch({
 
         {/* Results */}
         <div className="max-h-96 overflow-auto">
-          {grouped.length === 0 && query.length >= 2 && !loading && replacedCount === null && (
+          {grouped.length === 0 && query.length >= minLen && !loading && !regexError && replacedCount === null && (
             <div className="px-4 py-8 text-center text-gray-600 text-sm">No matches found</div>
           )}
-          {grouped.length === 0 && query.length >= 2 && !loading && replacedCount !== null && (
+          {grouped.length === 0 && query.length >= minLen && !loading && replacedCount !== null && (
             <div className="px-4 py-8 text-center text-green-600 text-sm">
               Replaced {replacedCount} occurrence{replacedCount !== 1 ? "s" : ""}
             </div>
           )}
-          {grouped.length === 0 && query.length < 2 && (
-            <div className="px-4 py-8 text-center text-gray-600 text-sm">Type at least 2 characters to search</div>
+          {grouped.length === 0 && query.length < minLen && !regexError && (
+            <div className="px-4 py-8 text-center text-gray-600 text-sm">
+              {useRegex ? "Type a regex pattern to search" : "Type at least 2 characters to search"}
+            </div>
+          )}
+          {regexError && (
+            <div className="px-4 py-8 text-center text-red-600 text-sm">Invalid regular expression</div>
           )}
           {grouped.map((group) => (
             <div key={group.fileId} className="border-b border-gray-800 last:border-0">

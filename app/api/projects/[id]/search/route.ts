@@ -20,8 +20,10 @@ export async function GET(
   const userId = await requireAuth();
   const { searchParams } = new URL(req.url);
   const query = searchParams.get('q')?.trim();
+  const isRegex = searchParams.get('regex') === '1';
+  const caseSensitive = searchParams.get('cs') === '1';
 
-  if (!query || query.length < 2) {
+  if (!query || query.length < 1) {
     return NextResponse.json({ results: [] });
   }
 
@@ -32,31 +34,40 @@ export async function GET(
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  let regex: RegExp;
+  try {
+    regex = new RegExp(isRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
+  } catch {
+    return NextResponse.json({ error: 'Invalid regex' }, { status: 400 });
+  }
+
   const rows = await db
     .select({ id: files.id, path: files.path, content: files.content })
     .from(files)
     .where(eq(files.projectId, params.id))
     .orderBy(files.path);
 
-  const lowerQuery = query.toLowerCase();
   const results: SearchResult[] = [];
-  const MAX_RESULTS = 100;
+  const MAX_RESULTS = 200;
 
   for (const file of rows) {
     if (!file.content) continue;
     const lines = file.content.split('\n');
     for (let i = 0; i < lines.length && results.length < MAX_RESULTS; i++) {
       const line = lines[i];
-      const idx = line.toLowerCase().indexOf(lowerQuery);
-      if (idx !== -1) {
+      const truncated = line.length > 200 ? line.slice(0, 200) : line;
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(truncated)) !== null && results.length < MAX_RESULTS) {
         results.push({
           fileId: file.id,
           path: file.path,
           lineNumber: i + 1,
-          lineText: line.length > 200 ? line.slice(0, 200) : line,
-          matchStart: idx,
-          matchEnd: idx + query.length,
+          lineText: truncated,
+          matchStart: match.index,
+          matchEnd: match.index + match[0].length,
         });
+        if (match[0].length === 0) { regex.lastIndex++; break; }
       }
     }
     if (results.length >= MAX_RESULTS) break;
