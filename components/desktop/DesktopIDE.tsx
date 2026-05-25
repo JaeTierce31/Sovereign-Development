@@ -32,6 +32,7 @@ const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", m
 const TAB_SIZES = [2, 4, 8] as const;
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
+function getPinnedKey(projectId: string) { return `peregrine:pinned:${projectId}`; }
 
 function loadPrefs(): EditorPrefs {
   if (typeof window === "undefined") return DEFAULT_PREFS;
@@ -192,14 +193,24 @@ function IDECore({ projectId }: { projectId: string }) {
   const [tabContextMenu, setTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const closedTabHistory = useRef<string[]>([]);
   const filesRef = useRef(files);
+  const [pinnedTabs, setPinnedTabs] = useState<Set<string>>(new Set());
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
     setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
   }, []);
 
+  const togglePin = useCallback((id: string) => {
+    setPinnedTabs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
   const closeTab = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (pinnedTabs.has(id)) return;
     closedTabHistory.current = [id, ...closedTabHistory.current].slice(0, 10);
     setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
     setOpenTabs((prev) => {
@@ -211,7 +222,7 @@ function IDECore({ projectId }: { projectId: string }) {
       }
       return next;
     });
-  }, [activeFileId]);
+  }, [activeFileId, pinnedTabs]);
 
   useEffect(() => { filesRef.current = files; }, [files]);
 
@@ -221,6 +232,15 @@ function IDECore({ projectId }: { projectId: string }) {
   }, [prefs]);
 
   useEffect(() => { setSidebarWidth(getSavedSidebarWidth()); }, []);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(getPinnedKey(projectId));
+    if (raw) { try { setPinnedTabs(new Set(JSON.parse(raw))); } catch { /* ignore */ } }
+  }, [projectId]);
+
+  useEffect(() => {
+    try { localStorage.setItem(getPinnedKey(projectId), JSON.stringify([...pinnedTabs])); } catch { /* ignore */ }
+  }, [pinnedTabs, projectId]);
 
   const startSidebarDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -384,7 +404,7 @@ function IDECore({ projectId }: { projectId: string }) {
         }
       } else if (mod && e.key === "w") {
         e.preventDefault();
-        if (activeFileId) {
+        if (activeFileId && !pinnedTabs.has(activeFileId)) {
           setOpenTabs((prev) => {
             const next = prev.filter((t) => t !== activeFileId);
             const idx = prev.indexOf(activeFileId);
@@ -445,7 +465,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -837,10 +857,11 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Tab bar */}
         {openTabs.length > 0 && (
           <div className="flex items-end bg-gray-950 border-b border-gray-700 overflow-x-auto shrink-0" style={{ minHeight: "32px" }}>
-            {openTabs.map((tabId, tabIdx) => {
+            {[...openTabs.filter((id) => pinnedTabs.has(id)), ...openTabs.filter((id) => !pinnedTabs.has(id))].map((tabId, tabIdx) => {
               const tabFile = files.find((f) => f.id === tabId);
               if (!tabFile) return null;
               const isActive = tabId === activeFileId;
+              const isPinned = pinnedTabs.has(tabId);
               const isDragOver = dragOverIndex === tabIdx && dragTabIndex.current !== null && dragTabIndex.current !== tabIdx;
               return (
                 <div
@@ -884,16 +905,20 @@ function IDECore({ projectId }: { projectId: string }) {
                   style={{ maxWidth: "180px" }}
                   onClick={() => setActiveFileId(tabId)}
                 >
-                  {dirtyTabs.has(tabId) && (
+                  {isPinned ? (
+                    <span className="text-amber-400/70 text-[10px] shrink-0 leading-none" title="Pinned">⚲</span>
+                  ) : dirtyTabs.has(tabId) ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
-                  )}
+                  ) : null}
                   <span className="truncate">{tabFile.path.split("/").pop()}</span>
-                  <button
-                    onClick={(e) => closeTab(tabId, e)}
-                    className="text-gray-600 hover:text-gray-300 leading-none ml-0.5 shrink-0"
-                  >
-                    ×
-                  </button>
+                  {!isPinned && (
+                    <button
+                      onClick={(e) => closeTab(tabId, e)}
+                      className="text-gray-600 hover:text-gray-300 leading-none ml-0.5 shrink-0"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -1233,7 +1258,13 @@ function IDECore({ projectId }: { projectId: string }) {
           >
             {[
               {
+                label: pinnedTabs.has(tabContextMenu.tabId) ? "Unpin Tab" : "Pin Tab",
+                action: () => togglePin(tabContextMenu.tabId),
+              },
+              null,
+              {
                 label: "Close",
+                disabled: pinnedTabs.has(tabContextMenu.tabId),
                 action: () => {
                   const e = { stopPropagation: () => {} } as React.MouseEvent;
                   closeTab(tabContextMenu.tabId, e);
@@ -1242,15 +1273,17 @@ function IDECore({ projectId }: { projectId: string }) {
               {
                 label: "Close Others",
                 action: () => {
-                  setOpenTabs([tabContextMenu.tabId]);
+                  const keep = [tabContextMenu.tabId, ...openTabs.filter((id) => pinnedTabs.has(id) && id !== tabContextMenu.tabId)];
+                  setOpenTabs(keep);
                   setActiveFileId(tabContextMenu.tabId);
                 },
               },
               {
-                label: "Close All",
+                label: "Close All Unpinned",
                 action: () => {
-                  setOpenTabs([]);
-                  setActiveFileId(null);
+                  const pinned = openTabs.filter((id) => pinnedTabs.has(id));
+                  setOpenTabs(pinned);
+                  setActiveFileId((cur) => (cur && pinnedTabs.has(cur)) ? cur : pinned[0] ?? null);
                 },
               },
               null,
@@ -1267,8 +1300,8 @@ function IDECore({ projectId }: { projectId: string }) {
               ) : (
                 <button
                   key={item.label}
-                  onClick={() => { item.action(); setTabContextMenu(null); }}
-                  className="w-full text-left px-4 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                  onClick={() => { if (!item.disabled) { item.action(); setTabContextMenu(null); } }}
+                  className={`w-full text-left px-4 py-1.5 transition-colors ${item.disabled ? "text-gray-600 cursor-default" : "text-gray-300 hover:bg-gray-800 hover:text-white"}`}
                 >
                   {item.label}
                 </button>
