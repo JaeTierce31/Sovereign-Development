@@ -302,6 +302,18 @@ function IDECore({ projectId }: { projectId: string }) {
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
+  const packageJsonScripts = (() => {
+    const pkgFile = files.find((f) => f.path === "package.json" || f.path.endsWith("/package.json"));
+    if (!pkgFile?.content) return undefined;
+    try {
+      const pkg = JSON.parse(pkgFile.content);
+      const s = pkg?.scripts;
+      return s && typeof s === "object" && Object.keys(s).length > 0
+        ? (s as Record<string, string>)
+        : undefined;
+    } catch { return undefined; }
+  })();
+
   useEffect(() => {
     if (activeFile && !activeFile.path.endsWith(".md")) setMdPreview(false);
     if (activeFile && !activeFile.path.endsWith(".html")) setHtmlPreview(false);
@@ -937,6 +949,7 @@ function IDECore({ projectId }: { projectId: string }) {
             <ExecutionPanel
               files={files}
               activeFile={activeFile}
+              scripts={packageJsonScripts}
               onClose={() => setTermOpen(false)}
             />
           </div>
