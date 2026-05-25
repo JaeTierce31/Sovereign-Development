@@ -106,6 +106,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const dragTabIndex = useRef<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
+  const closedTabHistory = useRef<string[]>([]);
+  const filesRef = useRef(files);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -114,6 +116,7 @@ function IDECore({ projectId }: { projectId: string }) {
 
   const closeTab = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    closedTabHistory.current = [id, ...closedTabHistory.current].slice(0, 10);
     setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
     setOpenTabs((prev) => {
       const next = prev.filter((t) => t !== id);
@@ -125,6 +128,8 @@ function IDECore({ projectId }: { projectId: string }) {
       return next;
     });
   }, [activeFileId]);
+
+  useEffect(() => { filesRef.current = files; }, [files]);
 
   useEffect(() => { setPrefs(loadPrefs()); }, []);
   useEffect(() => {
@@ -256,6 +261,16 @@ function IDECore({ projectId }: { projectId: string }) {
           setActiveFileId(prev[(idx - 1 + prev.length) % prev.length]);
           return prev;
         });
+      } else if (mod && e.shiftKey && (e.key === "t" || e.key === "T")) {
+        e.preventDefault();
+        const history = closedTabHistory.current;
+        while (history.length > 0) {
+          const id = history.shift()!;
+          if (filesRef.current.find((f) => f.id === id)) {
+            openFile(id);
+            break;
+          }
+        }
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSearchOpen((v) => !v);
@@ -283,7 +298,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -1205,6 +1220,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
+                ["⌘/Ctrl Shift T", "Reopen closed tab"],
                 ["⌘/Ctrl PageDown", "Next tab"],
                 ["⌘/Ctrl PageUp", "Previous tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
