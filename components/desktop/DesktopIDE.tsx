@@ -198,6 +198,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const closedTabHistory = useRef<string[]>([]);
   const filesRef = useRef(files);
   const [pinnedTabs, setPinnedTabs] = useState<Set<string>>(new Set());
+  const [splitFileId, setSplitFileId] = useState<string | null>(null);
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const isDraggingSplit = useRef(false);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -329,6 +332,29 @@ function IDECore({ projectId }: { projectId: string }) {
     document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
   }, [termHeightPx]);
+
+  const startSplitDrag = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    isDraggingSplit.current = true;
+    const container = (e.currentTarget as HTMLDivElement).parentElement!;
+    function onMove(ev: MouseEvent) {
+      if (!isDraggingSplit.current) return;
+      const rect = container.getBoundingClientRect();
+      const ratio = Math.min(Math.max((ev.clientX - rect.left) / rect.width, 0.2), 0.8);
+      setSplitRatio(ratio);
+    }
+    function onUp() {
+      isDraggingSplit.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/files`)
@@ -471,6 +497,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.key === ",") {
         e.preventDefault();
         setPrefsOpen((v) => !v);
+      } else if (mod && e.key === "\\") {
+        e.preventDefault();
+        setSplitFileId((cur) => cur ? null : (activeFileId ?? null));
       } else if (mod && e.key === "g") {
         e.preventDefault();
         setGotoLineOpen(true);
@@ -492,7 +521,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -540,6 +569,26 @@ function IDECore({ projectId }: { projectId: string }) {
       }, 800);
     },
     [activeFileId, projectId]
+  );
+
+  const handleSplitChange = useCallback(
+    (value: string | undefined) => {
+      if (!splitFileId || value === undefined) return;
+      setFiles((prev) =>
+        prev.map((f) => (f.id === splitFileId ? { ...f, content: value } : f))
+      );
+      setDirtyTabs((prev) => { const next = new Set(prev); next.add(splitFileId); return next; });
+      fetch(`/api/projects/${projectId}/files/${splitFileId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: value }),
+      }).then(() => {
+        const savedAt = Date.now();
+        setFiles((prev) => prev.map((f) => f.id === splitFileId ? { ...f, updatedAt: savedAt } : f));
+        setDirtyTabs((prev) => { const next = new Set(prev); next.delete(splitFileId); return next; });
+      });
+    },
+    [splitFileId, projectId]
   );
 
   async function createFile(e: React.FormEvent) {
@@ -1062,6 +1111,13 @@ function IDECore({ projectId }: { projectId: string }) {
               ⚙
             </button>
             <button
+              onClick={() => setSplitFileId((cur) => cur ? null : (activeFileId ?? null))}
+              className={`px-2 py-1 text-xs rounded transition-colors ${splitFileId ? "text-blue-400 hover:text-blue-300 bg-blue-900/20" : "text-gray-600 hover:text-gray-400"}`}
+              title={splitFileId ? "Close split (⌘/Ctrl \\)" : "Split editor (⌘/Ctrl \\)"}
+            >
+              ⫴
+            </button>
+            <button
               onClick={exportProject}
               className="px-2 py-1 text-xs text-gray-600 hover:text-gray-400 transition-colors"
               title="Export project as ZIP"
@@ -1082,78 +1138,146 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Editor + AI panel */}
         <div className="flex min-h-0" style={{ flex: "1 1 0", minHeight: 0 }}>
           <div className="flex min-w-0 flex-1" style={{ minHeight: 0 }}>
-            <div className={(mdPreview && activeFile?.path.endsWith(".md")) || (htmlPreview && activeFile?.path.endsWith(".html")) ? "w-1/2 min-w-0" : "flex-1 min-w-0"}>
-              {activeFile ? (
-                isImageFile ? (
-                  <ImageViewer file={activeFile} ext={activeExt} />
-                ) : (
-                  <Editor
-                    key={activeFile.id}
-                    height="100%"
-                    language={activeFile.language ?? inferLanguage(activeFile.path)}
-                    value={activeFile.content ?? ""}
-                    theme={prefs.theme}
-                    onChange={handleChange}
-                    onMount={(editor) => {
-                      vimModeRef.current?.dispose();
-                      vimModeRef.current = null;
-                      editorInstanceRef.current = editor;
-                      setCursorPos({ line: 1, col: 1 });
-                      editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
-                        setCursorPos({ line: e.position.lineNumber, col: e.position.column });
-                      });
-                      setEditorReady((v) => !v); // toggle to trigger the vim effect
-                    }}
-                    options={{
-                      fontSize: prefs.fontSize,
-                      tabSize: prefs.tabSize,
-                      minimap: { enabled: prefs.minimap },
-                      automaticLayout: true,
-                      wordWrap: prefs.wordWrap,
-                      stickyScroll: { enabled: prefs.stickyScroll },
-                      rulers: prefs.ruler ? [prefs.ruler] : [],
-                      scrollBeyondLastLine: false,
-                      smoothScrolling: true,
-                      cursorSmoothCaretAnimation: "on",
-                      renderLineHighlight: "all",
-                      padding: { top: 8, bottom: 8 },
-                    }}
-                  />
-                )
-              ) : (
-                !loading && (
-                  <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-                    {files.length === 0 ? (
-                      <div className="text-center">
-                        <p className="mb-2">No files yet.</p>
-                        <button
-                          onClick={() => setShowNewFile(true)}
-                          className="text-blue-500 hover:text-blue-400 text-sm"
-                        >
-                          + Create a file
-                        </button>
+            {/* Primary pane */}
+            <div
+              className="flex min-w-0 flex-col"
+              style={{ width: splitFileId ? `${splitRatio * 100}%` : undefined, flex: splitFileId ? undefined : "1 1 0" }}
+            >
+              <div className={`flex-1 min-h-0 ${(mdPreview && activeFile?.path.endsWith(".md")) || (htmlPreview && activeFile?.path.endsWith(".html")) ? "flex" : ""}`}>
+                <div className={(mdPreview && activeFile?.path.endsWith(".md")) || (htmlPreview && activeFile?.path.endsWith(".html")) ? "w-1/2 min-w-0 h-full" : "h-full"}>
+                  {activeFile ? (
+                    isImageFile ? (
+                      <ImageViewer file={activeFile} ext={activeExt} />
+                    ) : (
+                      <Editor
+                        key={activeFile.id}
+                        height="100%"
+                        language={activeFile.language ?? inferLanguage(activeFile.path)}
+                        value={activeFile.content ?? ""}
+                        theme={prefs.theme}
+                        onChange={handleChange}
+                        onMount={(editor) => {
+                          vimModeRef.current?.dispose();
+                          vimModeRef.current = null;
+                          editorInstanceRef.current = editor;
+                          setCursorPos({ line: 1, col: 1 });
+                          editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
+                            setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+                          });
+                          setEditorReady((v) => !v);
+                        }}
+                        options={{
+                          fontSize: prefs.fontSize,
+                          tabSize: prefs.tabSize,
+                          minimap: { enabled: prefs.minimap },
+                          automaticLayout: true,
+                          wordWrap: prefs.wordWrap,
+                          stickyScroll: { enabled: prefs.stickyScroll },
+                          rulers: prefs.ruler ? [prefs.ruler] : [],
+                          scrollBeyondLastLine: false,
+                          smoothScrolling: true,
+                          cursorSmoothCaretAnimation: "on",
+                          renderLineHighlight: "all",
+                          padding: { top: 8, bottom: 8 },
+                        }}
+                      />
+                    )
+                  ) : (
+                    !loading && (
+                      <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+                        {files.length === 0 ? (
+                          <div className="text-center">
+                            <p className="mb-2">No files yet.</p>
+                            <button
+                              onClick={() => setShowNewFile(true)}
+                              className="text-blue-500 hover:text-blue-400 text-sm"
+                            >
+                              + Create a file
+                            </button>
+                          </div>
+                        ) : "Select a file"}
                       </div>
-                    ) : "Select a file"}
+                    )
+                  )}
+                </div>
+                {mdPreview && activeFile?.path.endsWith(".md") && (
+                  <div className="w-1/2 border-l border-gray-700 min-w-0 h-full">
+                    <MarkdownPreview content={activeFile.content ?? ""} />
                   </div>
-                )
-              )}
+                )}
+                {htmlPreview && activeFile?.path.endsWith(".html") && (
+                  <div className="w-1/2 border-l border-gray-700 min-w-0 bg-white h-full">
+                    <iframe
+                      key={activeFile.id}
+                      srcDoc={activeFile.content ?? ""}
+                      sandbox="allow-scripts"
+                      className="w-full h-full"
+                      title="HTML Preview"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
-            {mdPreview && activeFile?.path.endsWith(".md") && (
-              <div className="w-1/2 border-l border-gray-700 min-w-0">
-                <MarkdownPreview content={activeFile.content ?? ""} />
-              </div>
-            )}
-            {htmlPreview && activeFile?.path.endsWith(".html") && (
-              <div className="w-1/2 border-l border-gray-700 min-w-0 bg-white">
-                <iframe
-                  key={activeFile.id}
-                  srcDoc={activeFile.content ?? ""}
-                  sandbox="allow-scripts"
-                  className="w-full h-full"
-                  title="HTML Preview"
-                />
-              </div>
-            )}
+
+            {/* Split divider + secondary pane */}
+            {splitFileId && (() => {
+              const splitFile = files.find((f) => f.id === splitFileId);
+              const splitExt = (splitFile?.path.split(".").pop() ?? "").toLowerCase();
+              return (
+                <>
+                  <div
+                    onMouseDown={startSplitDrag}
+                    className="w-1 shrink-0 cursor-col-resize hover:bg-blue-500/60 bg-gray-700/50 transition-colors"
+                    title="Drag to resize split"
+                  />
+                  <div className="flex flex-col min-w-0" style={{ flex: "1 1 0" }}>
+                    <div className="flex items-center gap-2 px-3 py-1 bg-gray-800/60 border-b border-gray-700 text-xs text-gray-400 shrink-0">
+                      <span className="font-mono truncate flex-1">{splitFile?.path ?? "—"}</span>
+                      {dirtyTabs.has(splitFileId) && <span className="text-yellow-500">●</span>}
+                      <button
+                        onClick={() => setSplitFileId(null)}
+                        className="text-gray-600 hover:text-white transition-colors ml-1"
+                        title="Close split (⌘/Ctrl \)"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="flex-1 min-h-0">
+                      {splitFile ? (
+                        IMAGE_EXTS.has(splitExt) ? (
+                          <ImageViewer file={splitFile} ext={splitExt} />
+                        ) : (
+                          <Editor
+                            key={`split-${splitFileId}`}
+                            height="100%"
+                            language={splitFile.language ?? inferLanguage(splitFile.path)}
+                            value={splitFile.content ?? ""}
+                            theme={prefs.theme}
+                            onChange={handleSplitChange}
+                            options={{
+                              fontSize: prefs.fontSize,
+                              tabSize: prefs.tabSize,
+                              minimap: { enabled: false },
+                              automaticLayout: true,
+                              wordWrap: prefs.wordWrap,
+                              stickyScroll: { enabled: prefs.stickyScroll },
+                              rulers: prefs.ruler ? [prefs.ruler] : [],
+                              scrollBeyondLastLine: false,
+                              smoothScrolling: true,
+                              cursorSmoothCaretAnimation: "on",
+                              renderLineHighlight: "all",
+                              padding: { top: 8, bottom: 8 },
+                            }}
+                          />
+                        )
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-600 text-sm">File not found</div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           {aiOpen && (
@@ -1298,6 +1422,10 @@ function IDECore({ projectId }: { projectId: string }) {
               {
                 label: pinnedTabs.has(tabContextMenu.tabId) ? "Unpin Tab" : "Pin Tab",
                 action: () => togglePin(tabContextMenu.tabId),
+              },
+              {
+                label: splitFileId === tabContextMenu.tabId ? "Close Split" : "Open in Split",
+                action: () => setSplitFileId(splitFileId === tabContextMenu.tabId ? null : tabContextMenu.tabId),
               },
               null,
               {
@@ -1588,6 +1716,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl `", "Toggle terminal"],
                 ["⌘/Ctrl S", "Save immediately"],
                 ["⌘/Ctrl ,", "Editor settings"],
+                ["⌘/Ctrl \\", "Toggle split editor"],
                 ["Escape", "Close panel / modal"],
                 ["?", "Show this help"],
               ].map(([key, desc]) => (
