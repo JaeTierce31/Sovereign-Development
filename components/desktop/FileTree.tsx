@@ -101,6 +101,12 @@ interface ContextMenuState {
   y: number;
 }
 
+interface FolderContextMenuState {
+  folderPath: string;
+  x: number;
+  y: number;
+}
+
 interface FileTreeProps {
   files: ProjectFile[];
   activeFileId: string | null;
@@ -116,6 +122,9 @@ interface FileTreeProps {
   onDuplicateFile?: (id: string) => void;
   defaultFolderPath?: string;
   onFolderPathChange?: (path: string) => void;
+  onNewFileInFolder?: (folderPath: string) => void;
+  onRenameFolder?: (folderPath: string) => void;
+  onDeleteFolder?: (folderPath: string) => void;
 }
 
 function TreeNodeRow({
@@ -131,15 +140,20 @@ function TreeNodeRow({
   onRenameChange,
   onCommitRename,
   onDeleteFile,
+  onNewFileInFolder,
+  onRenameFolder,
+  onDeleteFolder,
   expandedFolders,
   toggleFolder,
   onContextMenu,
+  onFolderContextMenu,
 }: FileTreeProps & {
   node: TreeNode;
   depth: number;
   expandedFolders: Set<string>;
   toggleFolder: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, fileId: string, filePath: string) => void;
+  onFolderContextMenu: (e: React.MouseEvent, folderPath: string) => void;
 }) {
   const indent = depth * 12;
 
@@ -149,6 +163,7 @@ function TreeNodeRow({
       <>
         <button
           onClick={() => toggleFolder(node.fullPath)}
+          onContextMenu={(e) => { e.preventDefault(); onFolderContextMenu(e, node.fullPath); }}
           className="w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
           style={{ paddingLeft: `${8 + indent}px` }}
         >
@@ -172,9 +187,13 @@ function TreeNodeRow({
             onRenameChange={onRenameChange}
             onCommitRename={onCommitRename}
             onDeleteFile={onDeleteFile}
+            onNewFileInFolder={onNewFileInFolder}
+            onRenameFolder={onRenameFolder}
+            onDeleteFolder={onDeleteFolder}
             expandedFolders={expandedFolders}
             toggleFolder={toggleFolder}
             onContextMenu={onContextMenu}
+            onFolderContextMenu={onFolderContextMenu}
           />
         ))}
       </>
@@ -242,8 +261,11 @@ export default function FileTree(props: FileTreeProps) {
   const { files } = props;
   const tree = buildTree(files);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [copiedFolderPath, setCopiedFolderPath] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const folderMenuRef = useRef<HTMLDivElement>(null);
 
   // Auto-expand folders that contain the active file
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
@@ -274,16 +296,15 @@ export default function FileTree(props: FileTreeProps) {
     });
   }, [props.activeFileId, files]);
 
-  // Close context menu on outside click or Escape
+  // Close context menus on outside click or Escape
   useEffect(() => {
-    if (!contextMenu) return;
+    if (!contextMenu && !folderContextMenu) return;
     function onDown(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setContextMenu(null);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setContextMenu(null);
+      if (folderMenuRef.current && !folderMenuRef.current.contains(e.target as Node)) setFolderContextMenu(null);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setContextMenu(null);
+      if (e.key === "Escape") { setContextMenu(null); setFolderContextMenu(null); }
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -291,7 +312,7 @@ export default function FileTree(props: FileTreeProps) {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [contextMenu]);
+  }, [contextMenu, folderContextMenu]);
 
   function toggleFolder(path: string) {
     setExpandedFolders((prev) => {
@@ -304,7 +325,14 @@ export default function FileTree(props: FileTreeProps) {
 
   const handleContextMenu = useCallback((e: React.MouseEvent, fileId: string, filePath: string) => {
     setContextMenu({ fileId, filePath, x: e.clientX, y: e.clientY });
+    setFolderContextMenu(null);
     setCopiedPath(false);
+  }, []);
+
+  const handleFolderContextMenu = useCallback((e: React.MouseEvent, folderPath: string) => {
+    setFolderContextMenu({ folderPath, x: e.clientX, y: e.clientY });
+    setContextMenu(null);
+    setCopiedFolderPath(false);
   }, []);
 
   if (files.length === 0) return null;
@@ -322,6 +350,7 @@ export default function FileTree(props: FileTreeProps) {
           expandedFolders={expandedFolders}
           toggleFolder={toggleFolder}
           onContextMenu={handleContextMenu}
+          onFolderContextMenu={handleFolderContextMenu}
         />
       ))}
 
@@ -371,6 +400,61 @@ export default function FileTree(props: FileTreeProps) {
           >
             Delete
           </button>
+        </div>
+      )}
+
+      {folderContextMenu && (
+        <div
+          ref={folderMenuRef}
+          className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl py-1 w-48 text-gray-300"
+          style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
+        >
+          {props.onNewFileInFolder && (
+            <button
+              className={ITEM}
+              onClick={() => {
+                props.onNewFileInFolder!(folderContextMenu.folderPath);
+                setFolderContextMenu(null);
+              }}
+            >
+              New File Here
+            </button>
+          )}
+          {props.onRenameFolder && (
+            <button
+              className={ITEM}
+              onClick={() => {
+                props.onRenameFolder!(folderContextMenu.folderPath);
+                setFolderContextMenu(null);
+              }}
+            >
+              Rename Folder
+            </button>
+          )}
+          <button
+            className={`${ITEM} ${copiedFolderPath ? "text-green-400" : ""}`}
+            onClick={() => {
+              navigator.clipboard.writeText(folderContextMenu.folderPath).catch(() => {});
+              setCopiedFolderPath(true);
+              setTimeout(() => { setCopiedFolderPath(false); setFolderContextMenu(null); }, 1200);
+            }}
+          >
+            {copiedFolderPath ? "✓ Copied!" : "Copy Path"}
+          </button>
+          {props.onDeleteFolder && (
+            <>
+              <div className="border-t border-gray-700 my-1" />
+              <button
+                className={`${ITEM} text-red-400 hover:bg-red-900/30`}
+                onClick={() => {
+                  props.onDeleteFolder!(folderContextMenu.folderPath);
+                  setFolderContextMenu(null);
+                }}
+              >
+                Delete Folder
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

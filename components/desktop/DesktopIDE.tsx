@@ -402,6 +402,69 @@ function IDECore({ projectId }: { projectId: string }) {
     }
   }
 
+  function newFileInFolder(folderPath: string) {
+    setNewFileName(folderPath + "/");
+    setShowNewFile(true);
+    setTimeout(() => newFileInputRef.current?.focus(), 0);
+  }
+
+  async function deleteFolder(folderPath: string) {
+    const prefix = folderPath + "/";
+    const toDelete = files.filter((f) => f.path === folderPath || f.path.startsWith(prefix));
+    if (toDelete.length === 0) return;
+    if (!confirm(`Delete folder "${folderPath}" and ${toDelete.length} file${toDelete.length !== 1 ? "s" : ""}?`)) return;
+    await Promise.all(
+      toDelete.map((f) => fetch(`/api/projects/${projectId}/files/${f.id}`, { method: "DELETE" }))
+    );
+    const deletedIds = new Set(toDelete.map((f) => f.id));
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => !deletedIds.has(t));
+      if (activeFileId && deletedIds.has(activeFileId)) {
+        setActiveFileId(next[0] ?? null);
+      }
+      return next;
+    });
+    setFiles((prev) => prev.filter((f) => !deletedIds.has(f.id)));
+  }
+
+  const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
+  const [renameFolderVal, setRenameFolderVal] = useState("");
+
+  function startRenameFolder(folderPath: string) {
+    setRenamingFolderPath(folderPath);
+    setRenameFolderVal(folderPath.split("/").pop() ?? folderPath);
+  }
+
+  async function commitRenameFolder(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!renamingFolderPath) return;
+    const newSegment = renameFolderVal.trim();
+    if (!newSegment) { setRenamingFolderPath(null); return; }
+    const parentPath = renamingFolderPath.includes("/")
+      ? renamingFolderPath.slice(0, renamingFolderPath.lastIndexOf("/"))
+      : "";
+    const newFolderPath = parentPath ? `${parentPath}/${newSegment}` : newSegment;
+    if (newFolderPath === renamingFolderPath) { setRenamingFolderPath(null); return; }
+    const prefix = renamingFolderPath + "/";
+    const toRename = files.filter((f) => f.path.startsWith(prefix));
+    setRenamingFolderPath(null);
+    const updates = await Promise.all(
+      toRename.map(async (f) => {
+        const newPath = newFolderPath + "/" + f.path.slice(prefix.length);
+        const res = await fetch(`/api/projects/${projectId}/files/${f.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: newPath }),
+        });
+        return res.ok ? (await res.json() as ProjectFile) : null;
+      })
+    );
+    setFiles((prev) => prev.map((f) => {
+      const updated = updates.find((u) => u?.id === f.id);
+      return updated ?? f;
+    }));
+  }
+
   function formatJson() {
     if (!activeFile || !activeFileId) return;
     try {
@@ -575,6 +638,9 @@ function IDECore({ projectId }: { projectId: string }) {
             onCommitRename={commitRename}
             onDeleteFile={deleteFile}
             onDuplicateFile={duplicateFile}
+            onNewFileInFolder={newFileInFolder}
+            onRenameFolder={startRenameFolder}
+            onDeleteFolder={deleteFolder}
           />
         )}
       </div>
@@ -1012,6 +1078,34 @@ function IDECore({ projectId }: { projectId: string }) {
               )
             )}
           </div>
+        </div>
+      )}
+      {renamingFolderPath !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setRenamingFolderPath(null)}>
+          <form
+            className="bg-gray-900 border border-gray-600 rounded-xl shadow-2xl p-4 w-72"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={commitRenameFolder}
+          >
+            <p className="text-xs text-gray-400 mb-2">Rename folder <span className="text-blue-400 font-mono">{renamingFolderPath}</span></p>
+            <input
+              autoFocus
+              value={renameFolderVal}
+              onChange={(e) => setRenameFolderVal(e.target.value)}
+              onBlur={() => commitRenameFolder()}
+              onKeyDown={(e) => { if (e.key === "Escape") setRenamingFolderPath(null); }}
+              className="w-full px-3 py-2 text-sm bg-gray-800 border border-blue-500 rounded-lg text-white focus:outline-none"
+              placeholder="New folder name"
+            />
+            <div className="flex gap-2 mt-3">
+              <button type="submit" className="flex-1 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
+                Rename
+              </button>
+              <button type="button" onClick={() => setRenamingFolderPath(null)} className="flex-1 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors">
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
       {gotoLineOpen && activeFile && (
