@@ -8,6 +8,7 @@ import { CollabProvider } from "@/components/collaboration/CollabProvider";
 import CursorPresence from "@/components/collaboration/CursorPresence";
 import AiPanel from "./AiPanel";
 import ExecutionPanel from "./ExecutionPanel";
+import CommandPalette from "./CommandPalette";
 import FileFinder from "./FileFinder";
 import GlobalSearch from "./GlobalSearch";
 import FileTree from "./FileTree";
@@ -210,6 +211,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [diffMode, setDiffMode] = useState(false);
   const savedContentRef = useRef<Map<string, string>>(new Map());
   const [breadcrumbPopover, setBreadcrumbPopover] = useState<{ folderPath: string; x: number; y: number } | null>(null);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -503,6 +505,9 @@ function IDECore({ projectId }: { projectId: string }) {
             break;
           }
         }
+      } else if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
+        e.preventDefault();
+        setCommandPaletteOpen((v) => !v);
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSearchOpen((v) => !v);
@@ -521,6 +526,7 @@ function IDECore({ projectId }: { projectId: string }) {
         if (breadcrumbPopover) { setBreadcrumbPopover(null); return; }
         if (gotoLineOpen) setGotoLineOpen(false);
         else if (inlineAiOpen) setInlineAiOpen(false);
+        else if (commandPaletteOpen) setCommandPaletteOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -534,7 +540,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -1639,6 +1645,24 @@ function IDECore({ projectId }: { projectId: string }) {
           openTabs={openTabs}
         />
       )}
+      {commandPaletteOpen && (
+        <CommandPalette
+          files={files}
+          onOpenFile={(id) => { openFile(id); setCommandPaletteOpen(false); }}
+          onClose={() => setCommandPaletteOpen(false)}
+          commands={[
+            { id: "new-file", label: "New File", description: "⌘/Ctrl N", icon: "+", action: () => setShowNewFile(true) },
+            { id: "global-search", label: "Search Across Files", description: "⌘/Ctrl Shift F", icon: "⌕", action: () => setSearchOpen(true) },
+            { id: "toggle-terminal", label: "Toggle Terminal", description: "⌘/Ctrl `", icon: ">_", action: () => setTermOpen((v) => !v) },
+            { id: "editor-settings", label: "Editor Settings", description: "⌘/Ctrl ,", icon: "⚙", action: () => setPrefsOpen(true) },
+            { id: "toggle-ai", label: "Toggle AI Panel", icon: "✦", action: () => setAiOpen((v) => !v) },
+            { id: "toggle-split", label: "Toggle Split Editor", description: "⌘/Ctrl \\", icon: "⫴", action: () => setSplitFileId((cur) => cur ? null : (activeFileId ?? null)) },
+            { id: "toggle-diff", label: "Toggle Diff View", icon: "±", action: () => setDiffMode((v) => !v) },
+            { id: "keyboard-shortcuts", label: "Keyboard Shortcuts", description: "?", icon: "?", action: () => setShortcutsOpen(true) },
+            { id: "project-settings", label: "Project Settings", icon: "⚙", action: () => setProjectSettingsOpen(true) },
+          ]}
+        />
+      )}
       {searchOpen && (
         <GlobalSearch
           projectId={projectId}
@@ -1777,6 +1801,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl K", "Inline AI command"],
                 ["⌘/Ctrl N", "New file"],
                 ["⌘/Ctrl P", "Quick file open"],
+                ["⌘/Ctrl Shift P", "Command palette"],
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
