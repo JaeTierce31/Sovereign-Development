@@ -437,6 +437,31 @@ function IDECore({ projectId }: { projectId: string }) {
     setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
   }, []);
 
+  const saveAll = useCallback(async () => {
+    const dirty = [...dirtyTabs];
+    if (dirty.length === 0) return;
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    setSaveStatus("saving");
+    const savedAt = Date.now();
+    await Promise.all(dirty.map(async (id) => {
+      const f = filesRef.current.find((fl) => fl.id === id);
+      const value = pendingSave.current?.id === id ? pendingSave.current.value : (f?.content ?? "");
+      if (!f) return;
+      await fetch(`/api/projects/${projectId}/files/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: value }),
+      });
+      savedContentRef.current.set(id, value);
+      setFiles((prev) => prev.map((fl) => fl.id === id ? { ...fl, updatedAt: savedAt } : fl));
+    }));
+    pendingSave.current = null;
+    setDirtyTabs(new Set());
+    setSaveStatus("saved");
+    if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+    saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
+  }, [dirtyTabs, projectId]);
+
   const togglePin = useCallback((id: string) => {
     setPinnedTabs((prev) => {
       const next = new Set(prev);
@@ -759,6 +784,9 @@ function IDECore({ projectId }: { projectId: string }) {
             });
           }
         })();
+      } else if (mod && e.shiftKey && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        saveAll();
       } else if (mod && e.key === "w") {
         e.preventDefault();
         if (activeFileId && !pinnedTabs.has(activeFileId)) {
@@ -1526,6 +1554,15 @@ function IDECore({ projectId }: { projectId: string }) {
             )}
             {saveStatus === "saving" && <span className="text-xs text-gray-600 shrink-0 ml-2">Saving…</span>}
             {saveStatus === "saved" && <span className="text-xs text-green-600 shrink-0 ml-2">Saved ✓</span>}
+            {saveStatus === "idle" && dirtyTabs.size > 1 && (
+              <button
+                onClick={saveAll}
+                className="text-xs text-yellow-600 hover:text-yellow-400 shrink-0 ml-2 transition-colors"
+                title={`Save all ${dirtyTabs.size} unsaved files (⌘/Ctrl Shift S)`}
+              >
+                Save all ({dirtyTabs.size})
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {isRunnable && (
@@ -2358,6 +2395,7 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setCommandPaletteOpen(false)}
           commands={[
             { id: "new-file", label: "New File", description: "⌘/Ctrl N", icon: "+", action: () => setShowNewFile(true) },
+            { id: "save-all", label: "Save All", description: "⌘/Ctrl Shift S", icon: "↓", action: saveAll },
             { id: "global-search", label: "Search Across Files", description: "⌘/Ctrl Shift F", icon: "⌕", action: () => setSearchOpen(true) },
             { id: "toggle-terminal", label: "Toggle Terminal", description: "⌘/Ctrl `", icon: ">_", action: () => setTermOpen((v) => !v) },
             { id: "editor-settings", label: "Editor Settings", description: "⌘/Ctrl ,", icon: "⚙", action: () => setPrefsOpen(true) },
@@ -2666,6 +2704,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl 0", "Jump to last tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
                 ["⌘/Ctrl S", "Save immediately"],
+                ["⌘/Ctrl Shift S", "Save all dirty files"],
                 ["⌘/Ctrl ,", "Editor settings"],
                 ["⌘/Ctrl \\", "Toggle split editor"],
                 ["Escape", "Close panel / modal"],
