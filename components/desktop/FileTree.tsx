@@ -85,8 +85,26 @@ function buildTree(files: ProjectFile[]): TreeNode[] {
     insert(folder.children, parts, depth + 1, file);
   }
 
+  function ensureFolders(nodes: TreeNode[], parts: string[], depth: number) {
+    if (depth >= parts.length) return;
+    const folderName = parts[depth];
+    const folderPath = parts.slice(0, depth + 1).join("/");
+    let folder = nodes.find((n) => n.type === "folder" && n.name === folderName);
+    if (!folder) {
+      folder = { type: "folder", name: folderName, fullPath: folderPath, children: [] };
+      nodes.push(folder);
+    }
+    ensureFolders(folder.children, parts, depth + 1);
+  }
+
   for (const file of files) {
-    insert(root, file.path.split("/"), 0, file);
+    const parts = file.path.split("/");
+    if (parts[parts.length - 1] === ".gitkeep") {
+      // Represent an empty folder without showing the placeholder file
+      if (parts.length > 1) ensureFolders(root, parts.slice(0, -1), 0);
+      continue;
+    }
+    insert(root, parts, 0, file);
   }
 
   function sortNodes(nodes: TreeNode[]) {
@@ -140,6 +158,7 @@ interface FileTreeProps {
   defaultFolderPath?: string;
   onFolderPathChange?: (path: string) => void;
   onNewFileInFolder?: (folderPath: string) => void;
+  onNewFolderInFolder?: (parentPath: string) => void;
   onRenameFolder?: (folderPath: string) => void;
   onDeleteFolder?: (folderPath: string) => void;
   onMoveFile?: (fileId: string, newPath: string) => void;
@@ -586,6 +605,17 @@ export default function FileTree(props: FileTreeProps) {
               }}
             >
               New File Here
+            </button>
+          )}
+          {props.onNewFolderInFolder && (
+            <button
+              className={ITEM}
+              onClick={() => {
+                props.onNewFolderInFolder!(folderContextMenu.folderPath);
+                setFolderContextMenu(null);
+              }}
+            >
+              New Folder Here
             </button>
           )}
           {props.onRenameFolder && (

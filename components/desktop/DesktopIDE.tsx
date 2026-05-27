@@ -394,6 +394,10 @@ function IDECore({ projectId }: { projectId: string }) {
   const [renameVal, setRenameVal] = useState("");
   const newFileInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newFolderParent, setNewFolderParent] = useState("");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
   const [dropTarget, setDropTarget] = useState(false);
@@ -1136,8 +1140,40 @@ function IDECore({ projectId }: { projectId: string }) {
 
   function newFileInFolder(folderPath: string) {
     setNewFileName(folderPath + "/");
+    setShowNewFolder(false);
     setShowNewFile(true);
     setTimeout(() => newFileInputRef.current?.focus(), 0);
+  }
+
+  function newFolderHere(parentPath: string) {
+    setNewFolderParent(parentPath);
+    setNewFolderName("");
+    setShowNewFile(false);
+    setShowNewFolder(true);
+    setTimeout(() => newFolderInputRef.current?.focus(), 0);
+  }
+
+  async function createFolder(e: React.FormEvent) {
+    e.preventDefault();
+    const seg = newFolderName.trim().replace(/[/\\]+/g, "");
+    if (!seg) { setShowNewFolder(false); return; }
+    const path = newFolderParent ? `${newFolderParent}/${seg}/.gitkeep` : `${seg}/.gitkeep`;
+    const res = await fetch(`/api/projects/${projectId}/files`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, content: "" }),
+    });
+    if (!res.ok) { setShowNewFolder(false); return; }
+    const file: ProjectFile = await res.json();
+    setFiles((prev) => [...prev, file]);
+    setShowNewFolder(false);
+    setNewFolderName("");
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      const parts = path.split("/");
+      for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
+      return next;
+    });
   }
 
   async function deleteFolder(folderPath: string) {
@@ -1528,11 +1564,19 @@ function IDECore({ projectId }: { projectId: string }) {
                   ⊟
                 </button>
                 <button
-                  onClick={() => setShowNewFile(true)}
+                  onClick={() => { setShowNewFolder(false); setShowNewFile(true); setTimeout(() => newFileInputRef.current?.focus(), 0); }}
                   className="text-gray-500 hover:text-gray-300 text-base leading-none transition-colors"
                   title="New file"
                 >
                   +
+                </button>
+                <button
+                  onClick={() => newFolderHere("")}
+                  className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
+                  title="New folder"
+                  style={{ fontSize: "13px" }}
+                >
+                  📁
                 </button>
               </div>
             </div>
@@ -1559,6 +1603,23 @@ function IDECore({ projectId }: { projectId: string }) {
               </form>
             )}
 
+            {showNewFolder && (
+              <form onSubmit={createFolder} className="px-3 pb-2">
+                {newFolderParent && (
+                  <p className="text-[10px] text-gray-600 mb-1 truncate">in {newFolderParent}/</p>
+                )}
+                <input
+                  ref={newFolderInputRef}
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="folder-name"
+                  className="w-full px-2 py-1 text-xs bg-gray-800 border border-yellow-600/60 focus:border-yellow-500 rounded text-white placeholder-gray-500 focus:outline-none"
+                  onKeyDown={(e) => e.key === "Escape" && (setShowNewFolder(false), setNewFolderName(""))}
+                  onBlur={() => { if (!newFolderName.trim()) setShowNewFolder(false); }}
+                />
+              </form>
+            )}
+
             {dropTarget && (
               <div className="mx-3 mb-2 border border-dashed border-blue-500 rounded-lg px-3 py-4 text-center text-xs text-blue-400 shrink-0">
                 Drop files to upload
@@ -1582,6 +1643,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 onDeleteFile={deleteFile}
                 onDuplicateFile={duplicateFile}
                 onNewFileInFolder={newFileInFolder}
+                onNewFolderInFolder={newFolderHere}
                 onRenameFolder={startRenameFolder}
                 onDeleteFolder={deleteFolder}
                 onMoveFile={moveFile}
