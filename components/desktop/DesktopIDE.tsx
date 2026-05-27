@@ -41,6 +41,14 @@ interface EditorPrefs {
   fontLigatures: boolean;
 }
 
+interface Problem {
+  severity: number;
+  message: string;
+  startLineNumber: number;
+  startColumn: number;
+  source?: string;
+}
+
 const PREFS_KEY = "peregrine:editor-prefs";
 const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on", bracketPairColorization: true, quickSuggestions: true, autoClosingBrackets: "languageDefined", fontLigatures: true };
 
@@ -368,6 +376,10 @@ function IDECore({ projectId }: { projectId: string }) {
   const localHistoryRef = useRef<Map<string, Snapshot[]>>(new Map());
   const viewStateMap = useRef<Map<string, unknown>>(new Map());
   const activeFileIdRef = useRef<string | null>(null);
+  const [problems, setProblems] = useState<Problem[]>([]);
+  const [problemsOpen, setProblemsOpen] = useState(false);
+  const monacoRef = useRef<unknown>(null);
+  const markerListenerRef = useRef<{ dispose: () => void } | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -492,6 +504,7 @@ function IDECore({ projectId }: { projectId: string }) {
 
   useEffect(() => { setDiffMode(false); }, [activeFileId]);
   useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
+  useEffect(() => { setProblems([]); }, [activeFileId]);
 
   const startSidebarDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1704,6 +1717,21 @@ function IDECore({ projectId }: { projectId: string }) {
                           vimModeRef.current?.dispose();
                           vimModeRef.current = null;
                           editorInstanceRef.current = editor;
+                          monacoRef.current = monaco;
+                          // Subscribe to Monaco diagnostics for this model
+                          markerListenerRef.current?.dispose();
+                          {
+                            const model = editor.getModel();
+                            if (model) {
+                              type Mn = { editor: { getModelMarkers: (o: { resource: unknown }) => Problem[]; onDidChangeMarkers: (cb: (uris: unknown[]) => void) => { dispose: () => void } } };
+                              const mn = monaco as Mn;
+                              const refresh = () => setProblems(mn.editor.getModelMarkers({ resource: model.uri }));
+                              refresh();
+                              markerListenerRef.current = mn.editor.onDidChangeMarkers((uris) => {
+                                if (uris.some((u) => (u as { toString(): string }).toString() === model.uri.toString())) refresh();
+                              });
+                            }
+                          }
                           // Restore saved scroll/cursor position for this file
                           const savedViewState = viewStateMap.current.get(activeFile.id);
                           if (savedViewState) {
@@ -1867,6 +1895,42 @@ function IDECore({ projectId }: { projectId: string }) {
           )}
         </div>
 
+        {/* Problems panel */}
+        {problemsOpen && (
+          <div className="shrink-0 bg-gray-900 border-t border-gray-700 flex flex-col" style={{ maxHeight: "180px" }}>
+            <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-400 border-b border-gray-800 select-none shrink-0">
+              <span className="font-semibold text-gray-300">Problems</span>
+              {activeFile && <span className="text-gray-600 truncate">{activeFile.path}</span>}
+              <button onClick={() => setProblemsOpen(false)} className="ml-auto text-gray-600 hover:text-gray-300 px-1 shrink-0">×</button>
+            </div>
+            <div className="overflow-auto flex-1">
+              {problems.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-gray-600 text-center">No errors or warnings detected</div>
+              ) : (
+                problems.map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      type Ed = { revealLineInCenter?: (l: number) => void; setPosition?: (pos: { lineNumber: number; column: number }) => void; focus?: () => void };
+                      const ed = editorInstanceRef.current as Ed | null;
+                      ed?.revealLineInCenter?.(p.startLineNumber);
+                      ed?.setPosition?.({ lineNumber: p.startLineNumber, column: p.startColumn });
+                      ed?.focus?.();
+                    }}
+                    className="w-full text-left flex items-start gap-2 px-3 py-1 hover:bg-gray-800/60 transition-colors group"
+                  >
+                    <span className={`shrink-0 font-mono text-xs mt-px ${p.severity === 8 ? "text-red-400" : p.severity === 4 ? "text-yellow-400" : "text-blue-400"}`}>
+                      {p.severity === 8 ? "✗" : p.severity === 4 ? "⚠" : "ℹ"}
+                    </span>
+                    <span className="text-xs text-gray-300 flex-1 min-w-0 text-left font-mono truncate">{p.message}</span>
+                    <span className="text-[10px] text-gray-600 shrink-0 tabular-nums">:{p.startLineNumber}:{p.startColumn}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Terminal panel */}
         {termOpen && (
           <div className="shrink-0 flex flex-col" style={{ height: `${termHeightPx}px` }}>
@@ -1888,6 +1952,25 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Status bar */}
         <div className="flex items-center justify-between px-3 py-0.5 bg-blue-900/40 border-t border-gray-800 text-xs text-gray-500 shrink-0 select-none">
           <div className="flex items-center gap-3">
+            {/* Problems indicator */}
+            {(() => {
+              const errs = problems.filter((p) => p.severity === 8).length;
+              const warns = problems.filter((p) => p.severity === 4).length;
+              return (
+                <button
+                  onClick={() => setProblemsOpen((v) => !v)}
+                  className={`flex items-center gap-1.5 transition-colors ${problemsOpen ? "text-white" : "hover:text-white"}`}
+                  title={`${errs} error${errs !== 1 ? "s" : ""}, ${warns} warning${warns !== 1 ? "s" : ""}`}
+                >
+                  {errs > 0 ? (
+                    <span className="text-red-400">✗ {errs}</span>
+                  ) : (
+                    <span>✓ 0</span>
+                  )}
+                  {warns > 0 && <span className="text-yellow-400">⚠ {warns}</span>}
+                </button>
+              );
+            })()}
             <button
               onClick={() => setStatsOpen((v) => !v)}
               className="hover:text-white transition-colors"
@@ -2276,6 +2359,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "project-settings", label: "Project Settings", icon: "⚙", action: () => setProjectSettingsOpen(true) },
             { id: "import-url", label: "Import File from URL", description: "Fetch & save a file from a URL", icon: "↓", action: () => { setImportUrlOpen(true); setImportUrlVal(""); setImportUrlError(""); } },
             { id: "local-history", label: "Local History", description: "Browse file version snapshots", icon: "⌛", action: () => { if (activeFileId) setHistoryOpen(true); } },
+            { id: "toggle-problems", label: "Toggle Problems Panel", description: "Show errors and warnings", icon: "✗", action: () => setProblemsOpen((v) => !v) },
           ]}
         />
       )}
