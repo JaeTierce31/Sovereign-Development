@@ -28,10 +28,28 @@ interface EditorPrefs {
   ruler: 80 | 120 | null;
   keymap: "default" | "vim";
   formatOnSave: boolean;
+  fontFamily: string;
+  renderWhitespace: "none" | "boundary" | "all";
+  cursorStyle: "line" | "block" | "underline";
+  lineNumbers: "on" | "off";
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on" };
+
+const FONT_URLS: Record<string, string> = {
+  "JetBrains Mono": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
+  "Fira Code": "https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap",
+  "Source Code Pro": "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500&display=swap",
+};
+
+const FONT_OPTIONS: { label: string; value: string; stack: string }[] = [
+  { label: "Default", value: "default", stack: "" },
+  { label: "JetBrains Mono", value: "JetBrains Mono", stack: "'JetBrains Mono', monospace" },
+  { label: "Fira Code", value: "Fira Code", stack: "'Fira Code', monospace" },
+  { label: "Source Code Pro", value: "Source Code Pro", stack: "'Source Code Pro', monospace" },
+  { label: "System Mono", value: "system", stack: "monospace" },
+];
 const TAB_SIZES = [2, 4, 8] as const;
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
@@ -450,6 +468,19 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (importUrlOpen) setTimeout(() => importUrlRef.current?.focus(), 0);
   }, [importUrlOpen]);
+
+  // Load Google Font when a web font is selected
+  useEffect(() => {
+    const url = FONT_URLS[prefs.fontFamily];
+    if (!url) return;
+    const id = `gfont-${prefs.fontFamily.replace(/\s+/g, "-")}`;
+    if (document.getElementById(id)) return;
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = url;
+    document.head.appendChild(link);
+  }, [prefs.fontFamily]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -1364,6 +1395,9 @@ function IDECore({ projectId }: { projectId: string }) {
                           smoothScrolling: true,
                           padding: { top: 8, bottom: 8 },
                           renderSideBySide: true,
+                          fontFamily: FONT_OPTIONS.find((f) => f.value === prefs.fontFamily)?.stack || undefined,
+                          fontLigatures: prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
+                          lineNumbers: prefs.lineNumbers,
                         }}
                         onMount={(diff) => {
                           const mod = diff.getModifiedEditor();
@@ -1403,6 +1437,11 @@ function IDECore({ projectId }: { projectId: string }) {
                           cursorSmoothCaretAnimation: "on",
                           renderLineHighlight: "all",
                           padding: { top: 8, bottom: 8 },
+                          fontFamily: FONT_OPTIONS.find((f) => f.value === prefs.fontFamily)?.stack || undefined,
+                          fontLigatures: prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
+                          renderWhitespace: prefs.renderWhitespace,
+                          cursorStyle: prefs.cursorStyle,
+                          lineNumbers: prefs.lineNumbers,
                         }}
                       />
                     )
@@ -1960,6 +1999,59 @@ function IDECore({ projectId }: { projectId: string }) {
                   <option value={4}>4 spaces</option>
                   <option value={8}>8 spaces</option>
                 </select>
+              </div>
+              {/* Font family */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Font family</label>
+                <select
+                  value={prefs.fontFamily}
+                  onChange={(e) => setPrefs((p) => ({ ...p, fontFamily: e.target.value }))}
+                  className="text-xs bg-gray-800 border border-gray-700 text-white rounded px-2 py-1 focus:outline-none focus:border-blue-500 max-w-[150px]"
+                >
+                  {FONT_OPTIONS.map((f) => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
+                </select>
+              </div>
+              {/* Cursor style */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Cursor style</label>
+                <div className="flex gap-1">
+                  {(["line", "block", "underline"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setPrefs((p) => ({ ...p, cursorStyle: v }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${prefs.cursorStyle === v ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                    >
+                      {v.charAt(0).toUpperCase() + v.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Render whitespace */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Whitespace</label>
+                <div className="flex gap-1">
+                  {(["none", "boundary", "all"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setPrefs((p) => ({ ...p, renderWhitespace: v }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${prefs.renderWhitespace === v ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                    >
+                      {v === "boundary" ? "Bound" : v.charAt(0).toUpperCase() + v.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Line numbers */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Line numbers</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, lineNumbers: p.lineNumbers === "on" ? "off" : "on" }))}
+                  className={`relative w-9 h-5 rounded-full transition-colors ${prefs.lineNumbers === "on" ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${prefs.lineNumbers === "on" ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
               </div>
               {/* Word wrap */}
               <div className="flex items-center justify-between">
