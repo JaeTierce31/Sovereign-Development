@@ -28,6 +28,8 @@ interface EditorPrefs {
   ruler: 80 | 120 | null;
   keymap: "default" | "vim";
   formatOnSave: boolean;
+  insertSpaces: boolean;
+  detectIndentation: boolean;
   fontFamily: string;
   renderWhitespace: "none" | "boundary" | "all";
   cursorStyle: "line" | "block" | "underline";
@@ -35,7 +37,7 @@ interface EditorPrefs {
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on" };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on" };
 
 const FONT_URLS: Record<string, string> = {
   "JetBrains Mono": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
@@ -328,6 +330,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const vimStatusRef = useRef<HTMLDivElement>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [selectionStats, setSelectionStats] = useState<{ chars: number; lines: number } | null>(null);
+  const [fileIndentOverride, setFileIndentOverride] = useState<{ insertSpaces: boolean; tabSize: number } | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -765,6 +768,42 @@ function IDECore({ projectId }: { projectId: string }) {
   }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
+
+  // Auto-detect indentation style from file content
+  useEffect(() => {
+    const content = activeFile?.content;
+    if (!prefs.detectIndentation || !content) { setFileIndentOverride(null); return; }
+    const lines = content.split("\n").slice(0, 250);
+    let tabs = 0, spaces = 0;
+    const diffs: number[] = [];
+    let prevIndent = 0;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      if (line[0] === "\t") { tabs++; prevIndent = 0; continue; }
+      const m = line.match(/^( +)/);
+      if (m) {
+        const indent = m[1].length;
+        const diff = Math.abs(indent - prevIndent);
+        if (diff > 0 && diff <= 8) diffs.push(diff);
+        spaces++;
+        prevIndent = indent;
+      } else {
+        prevIndent = 0;
+      }
+    }
+    if (tabs === 0 && spaces === 0) { setFileIndentOverride(null); return; }
+    if (tabs > spaces) { setFileIndentOverride({ insertSpaces: false, tabSize: 4 }); return; }
+    const freq: Record<number, number> = {};
+    for (const d of diffs) freq[d] = (freq[d] ?? 0) + 1;
+    const best = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+    const raw = best ? parseInt(best[0]) : 2;
+    const tabSize = ([2, 3, 4, 8] as const).reduce((a, b) => (Math.abs(b - raw) < Math.abs(a - raw) ? b : a));
+    setFileIndentOverride({ insertSpaces: true, tabSize });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFileId, prefs.detectIndentation, activeFile?.content]);
+
+  const effectiveInsertSpaces = (prefs.detectIndentation && fileIndentOverride !== null) ? fileIndentOverride.insertSpaces : prefs.insertSpaces;
+  const effectiveTabSize = (prefs.detectIndentation && fileIndentOverride !== null) ? fileIndentOverride.tabSize : prefs.tabSize;
 
   const packageJsonScripts = (() => {
     const pkgFile = files.find((f) => f.path === "package.json" || f.path.endsWith("/package.json"));
@@ -1575,7 +1614,8 @@ function IDECore({ projectId }: { projectId: string }) {
                         }}
                         options={{
                           fontSize: prefs.fontSize,
-                          tabSize: prefs.tabSize,
+                          tabSize: effectiveTabSize,
+                          insertSpaces: effectiveInsertSpaces,
                           minimap: { enabled: prefs.minimap },
                           automaticLayout: true,
                           wordWrap: prefs.wordWrap,
@@ -1813,14 +1853,20 @@ function IDECore({ projectId }: { projectId: string }) {
               </span>
             )}
             <button
-              onClick={() => setPrefs((p) => {
-                const next = TAB_SIZES[(TAB_SIZES.indexOf(p.tabSize as 2 | 4 | 8) + 1) % TAB_SIZES.length];
-                return { ...p, tabSize: next };
-              })}
+              onClick={() => {
+                setFileIndentOverride(null); // manual override clears detection
+                setPrefs((p) => {
+                  if (!p.insertSpaces) return { ...p, insertSpaces: true, tabSize: 2 };
+                  const idx = TAB_SIZES.indexOf(p.tabSize as 2 | 4 | 8);
+                  const next = TAB_SIZES[(idx + 1) % TAB_SIZES.length];
+                  if (idx === TAB_SIZES.length - 1) return { ...p, insertSpaces: false };
+                  return { ...p, tabSize: next };
+                });
+              }}
               className="hover:text-white transition-colors tabular-nums"
-              title={`Tab size: ${prefs.tabSize} (click to cycle)`}
+              title={effectiveInsertSpaces ? `Spaces: ${effectiveTabSize} (click to cycle)` : "Tabs (click to switch to spaces)"}
             >
-              {prefs.tabSize} spc
+              {effectiveInsertSpaces ? `${effectiveTabSize} spc` : "Tabs"}
             </button>
             <button
               onClick={() => setPrefs((p) => ({ ...p, wordWrap: p.wordWrap === "on" ? "off" : "on" }))}
@@ -2280,6 +2326,46 @@ function IDECore({ projectId }: { projectId: string }) {
                 >
                   <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.formatOnSave ? "translate-x-4" : "translate-x-0.5"}`} />
                 </button>
+              </div>
+              {/* Detect indentation */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Detect indentation</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, detectIndentation: !p.detectIndentation }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.detectIndentation ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.detectIndentation ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Indent with — only editable when auto-detect is off */}
+              <div className={`flex items-center justify-between ${prefs.detectIndentation ? "opacity-40 pointer-events-none" : ""}`}>
+                <label className="text-xs text-gray-400">Indent with</label>
+                <div className="flex gap-1">
+                  {([true, false] as const).map((useSpaces) => (
+                    <button
+                      key={String(useSpaces)}
+                      onClick={() => { setFileIndentOverride(null); setPrefs((p) => ({ ...p, insertSpaces: useSpaces })); }}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${prefs.insertSpaces === useSpaces ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                    >
+                      {useSpaces ? "Spaces" : "Tabs"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Tab size — only editable when auto-detect is off and using spaces */}
+              <div className={`flex items-center justify-between ${prefs.detectIndentation || !prefs.insertSpaces ? "opacity-40 pointer-events-none" : ""}`}>
+                <label className="text-xs text-gray-400">Tab size</label>
+                <div className="flex gap-1">
+                  {([2, 4, 8] as const).map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setPrefs((p) => ({ ...p, tabSize: n }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${prefs.tabSize === n ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
               {/* Reset */}
               <button
