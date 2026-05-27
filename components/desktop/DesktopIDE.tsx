@@ -23,7 +23,7 @@ interface EditorPrefs {
   tabSize: number;
   wordWrap: "on" | "off";
   minimap: boolean;
-  theme: "vs-dark" | "light";
+  theme: "vs-dark" | "light" | "dracula" | "one-dark" | "github-dark";
   stickyScroll: boolean;
   ruler: 80 | 120 | null;
   keymap: "default" | "vim";
@@ -50,6 +50,132 @@ const FONT_OPTIONS: { label: string; value: string; stack: string }[] = [
   { label: "Source Code Pro", value: "Source Code Pro", stack: "'Source Code Pro', monospace" },
   { label: "System Mono", value: "system", stack: "monospace" },
 ];
+
+interface ThemeDef {
+  base: "vs-dark" | "vs";
+  rules: { token: string; foreground?: string; fontStyle?: string }[];
+  colors: Record<string, string>;
+}
+
+const CUSTOM_THEMES: Record<string, ThemeDef> = {
+  dracula: {
+    base: "vs-dark",
+    rules: [
+      { token: "comment", foreground: "6272a4", fontStyle: "italic" },
+      { token: "string", foreground: "f1fa8c" },
+      { token: "constant.numeric", foreground: "bd93f9" },
+      { token: "constant.language", foreground: "bd93f9" },
+      { token: "keyword", foreground: "ff79c6" },
+      { token: "storage.type", foreground: "ff79c6" },
+      { token: "storage.modifier", foreground: "ff79c6" },
+      { token: "entity.name.function", foreground: "50fa7b" },
+      { token: "entity.name.type", foreground: "8be9fd" },
+      { token: "entity.name.class", foreground: "8be9fd" },
+      { token: "variable.parameter", foreground: "ffb86c" },
+      { token: "support.function", foreground: "50fa7b" },
+      { token: "type.identifier", foreground: "8be9fd" },
+      { token: "operator", foreground: "ff79c6" },
+      { token: "tag", foreground: "ff79c6" },
+      { token: "attribute.name", foreground: "50fa7b" },
+      { token: "attribute.value", foreground: "f1fa8c" },
+    ],
+    colors: {
+      "editor.background": "#282a36",
+      "editor.foreground": "#f8f8f2",
+      "editor.lineHighlightBackground": "#44475a",
+      "editor.selectionBackground": "#44475a",
+      "editor.inactiveSelectionBackground": "#44475a80",
+      "editorCursor.foreground": "#f8f8f0",
+      "editorLineNumber.foreground": "#6272a4",
+      "editorLineNumber.activeForeground": "#f8f8f2",
+      "editorIndentGuide.background1": "#3d3f4e",
+      "editorIndentGuide.activeBackground1": "#9d9d9d",
+      "scrollbarSlider.background": "#44475a99",
+      "editor.findMatchBackground": "#ffb86c4d",
+      "editor.findMatchHighlightBackground": "#ffffff26",
+    },
+  },
+  "one-dark": {
+    base: "vs-dark",
+    rules: [
+      { token: "comment", foreground: "5c6370", fontStyle: "italic" },
+      { token: "string", foreground: "98c379" },
+      { token: "constant.numeric", foreground: "d19a66" },
+      { token: "constant.language", foreground: "56b6c2" },
+      { token: "keyword", foreground: "c678dd" },
+      { token: "storage.type", foreground: "c678dd" },
+      { token: "storage.modifier", foreground: "c678dd" },
+      { token: "entity.name.function", foreground: "61afef" },
+      { token: "entity.name.type", foreground: "e5c07b" },
+      { token: "entity.name.class", foreground: "e5c07b" },
+      { token: "variable", foreground: "e06c75" },
+      { token: "support.function", foreground: "61afef" },
+      { token: "type.identifier", foreground: "e5c07b" },
+      { token: "operator", foreground: "56b6c2" },
+      { token: "tag", foreground: "e06c75" },
+      { token: "attribute.name", foreground: "d19a66" },
+      { token: "attribute.value", foreground: "98c379" },
+    ],
+    colors: {
+      "editor.background": "#282c34",
+      "editor.foreground": "#abb2bf",
+      "editor.lineHighlightBackground": "#2c313c",
+      "editor.selectionBackground": "#3e4452",
+      "editor.inactiveSelectionBackground": "#3e445280",
+      "editorCursor.foreground": "#528bff",
+      "editorLineNumber.foreground": "#495162",
+      "editorLineNumber.activeForeground": "#abb2bf",
+      "editorIndentGuide.background1": "#3b4048",
+      "editorIndentGuide.activeBackground1": "#9d9d9d",
+      "scrollbarSlider.background": "#3e445299",
+    },
+  },
+  "github-dark": {
+    base: "vs-dark",
+    rules: [
+      { token: "comment", foreground: "8b949e", fontStyle: "italic" },
+      { token: "string", foreground: "a5d6ff" },
+      { token: "constant.numeric", foreground: "79c0ff" },
+      { token: "constant.language", foreground: "79c0ff" },
+      { token: "keyword", foreground: "ff7b72" },
+      { token: "storage.type", foreground: "ff7b72" },
+      { token: "storage.modifier", foreground: "ff7b72" },
+      { token: "entity.name.function", foreground: "d2a8ff" },
+      { token: "entity.name.type", foreground: "f0883e" },
+      { token: "entity.name.class", foreground: "f0883e" },
+      { token: "support.function", foreground: "d2a8ff" },
+      { token: "type.identifier", foreground: "f0883e" },
+      { token: "operator", foreground: "ff7b72" },
+      { token: "tag", foreground: "7ee787" },
+      { token: "attribute.name", foreground: "79c0ff" },
+      { token: "attribute.value", foreground: "a5d6ff" },
+    ],
+    colors: {
+      "editor.background": "#0d1117",
+      "editor.foreground": "#c9d1d9",
+      "editor.lineHighlightBackground": "#161b22",
+      "editor.selectionBackground": "#3b5070",
+      "editor.inactiveSelectionBackground": "#3b507080",
+      "editorCursor.foreground": "#c9d1d9",
+      "editorLineNumber.foreground": "#6e7681",
+      "editorLineNumber.activeForeground": "#c9d1d9",
+      "editorIndentGuide.background1": "#21262d",
+      "editorIndentGuide.activeBackground1": "#9d9d9d",
+      "scrollbarSlider.background": "#6e768166",
+      "editor.findMatchBackground": "#f2cc604d",
+      "editor.findMatchHighlightBackground": "#f2cc6026",
+    },
+  },
+};
+
+const THEME_OPTIONS: { label: string; value: string }[] = [
+  { label: "VS Dark", value: "vs-dark" },
+  { label: "VS Light", value: "light" },
+  { label: "Dracula", value: "dracula" },
+  { label: "One Dark Pro", value: "one-dark" },
+  { label: "GitHub Dark", value: "github-dark" },
+];
+
 const TAB_SIZES = [2, 4, 8] as const;
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
@@ -201,6 +327,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const vimModeRef = useRef<{ dispose: () => void } | null>(null);
   const vimStatusRef = useRef<HTMLDivElement>(null);
   const [editorReady, setEditorReady] = useState(false);
+  const [selectionStats, setSelectionStats] = useState<{ chars: number; lines: number } | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -468,6 +595,8 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (importUrlOpen) setTimeout(() => importUrlRef.current?.focus(), 0);
   }, [importUrlOpen]);
+
+  useEffect(() => { setSelectionStats(null); }, [activeFileId]);
 
   // Load Google Font when a web font is selected
   useEffect(() => {
@@ -1399,7 +1528,11 @@ function IDECore({ projectId }: { projectId: string }) {
                           fontLigatures: prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
                           lineNumbers: prefs.lineNumbers,
                         }}
-                        onMount={(diff) => {
+                        onMount={(diff, monaco) => {
+                          Object.entries(CUSTOM_THEMES).forEach(([name, data]) => {
+                            monaco.editor.defineTheme(name, { base: data.base, inherit: true, rules: data.rules, colors: data.colors });
+                          });
+                          monaco.editor.setTheme(prefs.theme);
                           const mod = diff.getModifiedEditor();
                           mod.onDidChangeModelContent(() => {
                             handleChange(mod.getValue());
@@ -1414,13 +1547,29 @@ function IDECore({ projectId }: { projectId: string }) {
                         value={activeFile.content ?? ""}
                         theme={prefs.theme}
                         onChange={handleChange}
-                        onMount={(editor) => {
+                        onMount={(editor, monaco) => {
+                          Object.entries(CUSTOM_THEMES).forEach(([name, data]) => {
+                            monaco.editor.defineTheme(name, { base: data.base, inherit: true, rules: data.rules, colors: data.colors });
+                          });
+                          monaco.editor.setTheme(prefs.theme);
                           vimModeRef.current?.dispose();
                           vimModeRef.current = null;
                           editorInstanceRef.current = editor;
                           setCursorPos({ line: 1, col: 1 });
+                          setSelectionStats(null);
                           editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
                             setCursorPos({ line: e.position.lineNumber, col: e.position.column });
+                          });
+                          editor.onDidChangeCursorSelection(() => {
+                            const model = editor.getModel();
+                            const sel = editor.getSelection();
+                            if (!model || !sel || sel.isEmpty()) {
+                              setSelectionStats(null);
+                            } else {
+                              const chars = model.getValueLengthInRange(sel);
+                              const lines = sel.endLineNumber - sel.startLineNumber + 1;
+                              setSelectionStats(chars > 0 ? { chars, lines: lines > 1 ? lines : 0 } : null);
+                            }
                           });
                           setEditorReady((v) => !v);
                         }}
@@ -1655,6 +1804,13 @@ function IDECore({ projectId }: { projectId: string }) {
             )}
             {activeFile && (
               <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
+            )}
+            {selectionStats && (
+              <span className="text-blue-400" title="Selection">
+                {selectionStats.lines > 1
+                  ? `${selectionStats.lines} lines · ${selectionStats.chars} chars`
+                  : `${selectionStats.chars} chars`}
+              </span>
             )}
             <button
               onClick={() => setPrefs((p) => {
@@ -2105,21 +2261,15 @@ function IDECore({ projectId }: { projectId: string }) {
               {/* Theme */}
               <div className="flex items-center justify-between">
                 <label className="text-xs text-gray-400">Theme</label>
-                <div className="flex gap-1">
-                  {(["vs-dark", "light"] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setPrefs((p) => ({ ...p, theme: t }))}
-                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${
-                        prefs.theme === t
-                          ? "border-blue-500 bg-blue-600/20 text-blue-300"
-                          : "border-gray-700 text-gray-400 hover:border-gray-500"
-                      }`}
-                    >
-                      {t === "vs-dark" ? "Dark" : "Light"}
-                    </button>
+                <select
+                  value={prefs.theme}
+                  onChange={(e) => setPrefs((p) => ({ ...p, theme: e.target.value as EditorPrefs["theme"] }))}
+                  className="text-xs bg-gray-800 border border-gray-700 text-white rounded px-2 py-1 focus:outline-none focus:border-blue-500 max-w-[150px]"
+                >
+                  {THEME_OPTIONS.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
-                </div>
+                </select>
               </div>
               {/* Format on save */}
               <div className="flex items-center justify-between">
