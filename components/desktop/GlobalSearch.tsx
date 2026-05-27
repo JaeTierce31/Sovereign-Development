@@ -21,12 +21,14 @@ export default function GlobalSearch({
   onSelect,
   onClose,
   onFileSave,
+  inline = false,
 }: {
   projectId: string;
   files: ProjectFile[];
   onSelect: (fileId: string) => void;
   onClose: () => void;
   onFileSave?: (fileId: string, content: string) => void;
+  inline?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
@@ -162,6 +164,104 @@ export default function GlobalSearch({
       {children}
     </button>
   );
+
+  if (inline) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Search row */}
+        <div className={`flex items-center gap-2 px-3 py-2 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
+          <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={useRegex ? "Regex search…" : "Search files…"}
+            className="flex-1 bg-transparent text-white text-xs placeholder-gray-500 focus:outline-none min-w-0"
+            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+          />
+          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Case sensitive">Aa</ToggleBtn>
+          <ToggleBtn active={useRegex} onClick={() => setUseRegex((v) => !v)} title="Use regex">.*</ToggleBtn>
+        </div>
+        {/* Replace row */}
+        <div className={`flex items-center gap-2 px-3 py-1.5 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
+          <svg className="w-3.5 h-3.5 text-gray-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+          <input
+            ref={replaceRef}
+            value={replaceText}
+            onChange={(e) => setReplaceText(e.target.value)}
+            placeholder="Replace…"
+            className="flex-1 bg-transparent text-white text-xs placeholder-gray-500 focus:outline-none min-w-0"
+            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+          />
+          {grouped.length > 0 && replaceText !== "" && (
+            <button
+              onClick={handleReplaceAll}
+              disabled={replacing || !query}
+              className="px-1.5 py-0.5 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded transition-colors shrink-0"
+            >
+              {replacing ? "…" : "All"}
+            </button>
+          )}
+        </div>
+        {/* Status row */}
+        <div className="px-3 py-1 shrink-0 flex items-center gap-2 min-h-[20px]">
+          {loading && <span className="text-gray-600 text-[10px]">Searching…</span>}
+          {regexError && <span className="text-red-500 text-[10px]">Bad regex</span>}
+          {!loading && !regexError && query.length >= minLen && replacedCount === null && (
+            <span className="text-gray-600 text-[10px]">{results.length} match{results.length !== 1 ? "es" : ""}</span>
+          )}
+          {replacedCount !== null && (
+            <span className="text-green-500 text-[10px]">{replacedCount} replaced</span>
+          )}
+        </div>
+        {/* Results */}
+        <div className="flex-1 overflow-auto">
+          {grouped.length === 0 && query.length >= minLen && !loading && !regexError && replacedCount === null && (
+            <div className="px-3 py-4 text-center text-gray-600 text-xs">No matches</div>
+          )}
+          {grouped.length === 0 && query.length < minLen && !regexError && (
+            <div className="px-3 py-6 text-center text-gray-600 text-xs">
+              {useRegex ? "Type a pattern…" : "Type 2+ chars to search"}
+            </div>
+          )}
+          {grouped.map((group) => (
+            <div key={group.fileId} className="border-b border-gray-800/60 last:border-0">
+              <div className="flex items-center justify-between px-3 py-1 bg-gray-800/40 sticky top-0">
+                <span className="text-[10px] font-medium text-blue-400 truncate">{group.path}</span>
+                {replaceText !== "" && (
+                  <button
+                    onClick={() => handleReplaceAllInFile(group.fileId)}
+                    disabled={replacing || !query}
+                    className="text-[10px] text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-1"
+                  >
+                    Replace ({group.matches.length})
+                  </button>
+                )}
+              </div>
+              {group.matches.map((match, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSelect(match.fileId)}
+                  className="w-full text-left px-3 py-1.5 hover:bg-gray-800 transition-colors"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-gray-600 text-[10px] w-6 shrink-0 text-right">{match.lineNumber}</span>
+                    <span className="text-[10px] font-mono truncate">
+                      {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/60" onClick={onClose}>

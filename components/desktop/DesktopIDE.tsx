@@ -360,6 +360,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search">("explorer");
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const isDraggingSidebar = useRef(false);
   const [termHeightPx, setTermHeightPx] = useState(TERM_HEIGHT_DEFAULT);
@@ -906,7 +907,11 @@ function IDECore({ projectId }: { projectId: string }) {
         });
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
-        setSearchOpen((v) => !v);
+        setSidebarOpen(true);
+        setSidebarTab((cur) => {
+          if (cur === "search") return "explorer";
+          return "search";
+        });
       } else if (mod && e.key === ",") {
         e.preventDefault();
         setPrefsOpen((v) => !v);
@@ -1459,93 +1464,132 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Explorer</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const all = new Set<string>();
-                for (const f of files) {
-                  const parts = f.path.split("/");
-                  for (let i = 1; i < parts.length; i++) all.add(parts.slice(0, i).join("/"));
-                }
-                setExpandedFolders(all);
-              }}
-              className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
-              title="Expand all folders"
-              style={{ fontSize: "11px" }}
-            >
-              ⊞
-            </button>
-            <button
-              onClick={() => setExpandedFolders(new Set())}
-              className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
-              title="Collapse all folders"
-              style={{ fontSize: "11px" }}
-            >
-              ⊟
-            </button>
-            <button
-              onClick={() => setShowNewFile(true)}
-              className="text-gray-500 hover:text-gray-300 text-base leading-none transition-colors"
-              title="New file"
-            >
-              +
-            </button>
-          </div>
+        {/* Sidebar tab bar */}
+        <div className="flex border-b border-gray-700 shrink-0">
+          <button
+            onClick={() => setSidebarTab("explorer")}
+            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "explorer" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
+            title="Explorer (files)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+            </svg>
+            Files
+          </button>
+          <button
+            onClick={() => setSidebarTab("search")}
+            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "search" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
+            title="Search across files (⌘/Ctrl Shift F)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            Search
+          </button>
         </div>
 
-        {showNewFile && (
-          <form onSubmit={createFile} className="px-3 pb-2">
-            <input
-              ref={newFileInputRef}
-              value={newFileName}
-              onChange={(e) => setNewFileName(e.target.value)}
-              placeholder="filename.ts"
-              className="w-full px-2 py-1 text-xs bg-gray-800 border border-gray-600 focus:border-blue-500 rounded text-white placeholder-gray-500 focus:outline-none"
-              onKeyDown={(e) => e.key === "Escape" && (setShowNewFile(false), setNewFileName(""))}
-              onBlur={() => { if (!newFileName.trim()) { setShowNewFile(false); } }}
-            />
-            {(() => {
-              const trimmed = newFileName.trim();
-              if (!trimmed) return null;
-              const hasTemplate = TEMPLATE_EXTS.has(getFileExt(trimmed)) || TEMPLATE_FILENAMES.has(getFilename(trimmed));
-              return hasTemplate ? (
-                <p className="text-xs text-blue-400/70 mt-1 px-0.5">✦ Template will be applied</p>
-              ) : null;
-            })()}
-          </form>
-        )}
+        {sidebarTab === "explorer" ? (
+          <>
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Explorer</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const all = new Set<string>();
+                    for (const f of files) {
+                      const parts = f.path.split("/");
+                      for (let i = 1; i < parts.length; i++) all.add(parts.slice(0, i).join("/"));
+                    }
+                    setExpandedFolders(all);
+                  }}
+                  className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
+                  title="Expand all folders"
+                  style={{ fontSize: "11px" }}
+                >
+                  ⊞
+                </button>
+                <button
+                  onClick={() => setExpandedFolders(new Set())}
+                  className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
+                  title="Collapse all folders"
+                  style={{ fontSize: "11px" }}
+                >
+                  ⊟
+                </button>
+                <button
+                  onClick={() => setShowNewFile(true)}
+                  className="text-gray-500 hover:text-gray-300 text-base leading-none transition-colors"
+                  title="New file"
+                >
+                  +
+                </button>
+              </div>
+            </div>
 
-        {dropTarget && (
-          <div className="mx-3 mb-2 border border-dashed border-blue-500 rounded-lg px-3 py-4 text-center text-xs text-blue-400 shrink-0">
-            Drop files to upload
-          </div>
-        )}
+            {showNewFile && (
+              <form onSubmit={createFile} className="px-3 pb-2">
+                <input
+                  ref={newFileInputRef}
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  placeholder="filename.ts"
+                  className="w-full px-2 py-1 text-xs bg-gray-800 border border-gray-600 focus:border-blue-500 rounded text-white placeholder-gray-500 focus:outline-none"
+                  onKeyDown={(e) => e.key === "Escape" && (setShowNewFile(false), setNewFileName(""))}
+                  onBlur={() => { if (!newFileName.trim()) { setShowNewFile(false); } }}
+                />
+                {(() => {
+                  const trimmed = newFileName.trim();
+                  if (!trimmed) return null;
+                  const hasTemplate = TEMPLATE_EXTS.has(getFileExt(trimmed)) || TEMPLATE_FILENAMES.has(getFilename(trimmed));
+                  return hasTemplate ? (
+                    <p className="text-xs text-blue-400/70 mt-1 px-0.5">✦ Template will be applied</p>
+                  ) : null;
+                })()}
+              </form>
+            )}
 
-        {loading ? (
-          <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
+            {dropTarget && (
+              <div className="mx-3 mb-2 border border-dashed border-blue-500 rounded-lg px-3 py-4 text-center text-xs text-blue-400 shrink-0">
+                Drop files to upload
+              </div>
+            )}
+
+            {loading ? (
+              <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
+            ) : (
+              <FileTree
+                files={files}
+                activeFileId={activeFileId}
+                dirtyTabs={dirtyTabs}
+                renamingId={renamingId}
+                renameVal={renameVal}
+                renameInputRef={renameInputRef}
+                onOpenFile={openFile}
+                onStartRename={(id, path) => { setRenamingId(id); setRenameVal(path); }}
+                onRenameChange={setRenameVal}
+                onCommitRename={commitRename}
+                onDeleteFile={deleteFile}
+                onDuplicateFile={duplicateFile}
+                onNewFileInFolder={newFileInFolder}
+                onRenameFolder={startRenameFolder}
+                onDeleteFolder={deleteFolder}
+                onMoveFile={moveFile}
+                onMoveFolder={moveFolder}
+                expandedFolders={expandedFolders}
+                onToggleFolder={toggleFolder}
+              />
+            )}
+          </>
         ) : (
-          <FileTree
+          <GlobalSearch
+            projectId={projectId}
             files={files}
-            activeFileId={activeFileId}
-            dirtyTabs={dirtyTabs}
-            renamingId={renamingId}
-            renameVal={renameVal}
-            renameInputRef={renameInputRef}
-            onOpenFile={openFile}
-            onStartRename={(id, path) => { setRenamingId(id); setRenameVal(path); }}
-            onRenameChange={setRenameVal}
-            onCommitRename={commitRename}
-            onDeleteFile={deleteFile}
-            onDuplicateFile={duplicateFile}
-            onNewFileInFolder={newFileInFolder}
-            onRenameFolder={startRenameFolder}
-            onDeleteFolder={deleteFolder}
-            onMoveFile={moveFile}
-            onMoveFolder={moveFolder}
-            expandedFolders={expandedFolders}
-            onToggleFolder={toggleFolder}
+            onSelect={(id) => { openFile(id); }}
+            onClose={() => setSidebarTab("explorer")}
+            onFileSave={(fileId, content) => {
+              setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, content } : f));
+            }}
+            inline
           />
         )}
         {/* Drag handle */}
@@ -2524,7 +2568,7 @@ function IDECore({ projectId }: { projectId: string }) {
           commands={[
             { id: "new-file", label: "New File", description: "⌘/Ctrl N", icon: "+", action: () => setShowNewFile(true) },
             { id: "save-all", label: "Save All", description: "⌘/Ctrl Shift S", icon: "↓", action: saveAll },
-            { id: "global-search", label: "Search Across Files", description: "⌘/Ctrl Shift F", icon: "⌕", action: () => setSearchOpen(true) },
+            { id: "global-search", label: "Search Across Files", description: "⌘/Ctrl Shift F", icon: "⌕", action: () => { setSidebarOpen(true); setSidebarTab("search"); } },
             { id: "toggle-terminal", label: "Toggle Terminal", description: "⌘/Ctrl `", icon: ">_", action: () => setTermOpen((v) => !v) },
             { id: "editor-settings", label: "Editor Settings", description: "⌘/Ctrl ,", icon: "⚙", action: () => setPrefsOpen(true) },
             { id: "toggle-ai", label: "Toggle AI Panel", icon: "✦", action: () => setAiOpen((v) => !v) },
@@ -2568,7 +2612,7 @@ function IDECore({ projectId }: { projectId: string }) {
           projectId={projectId}
           files={files}
           onSelect={(id) => { openFile(id); setSearchOpen(false); }}
-          onClose={() => setSearchOpen(false)}
+          onClose={() => { setSearchOpen(false); }}
           onFileSave={(fileId, content) => {
             setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, content } : f));
           }}
