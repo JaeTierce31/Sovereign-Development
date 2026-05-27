@@ -441,6 +441,12 @@ function IDECore({ projectId }: { projectId: string }) {
       return new Set();
     }
   });
+
+  const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(localStorage.getItem(`peregrine:recent:${projectId}`) ?? "[]"); }
+    catch { return []; }
+  });
   const toggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
       const next = new Set(prev);
@@ -563,6 +569,25 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => { setDiffMode(false); }, [activeFileId]);
   useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
   useEffect(() => { setProblems([]); }, [activeFileId]);
+
+  useEffect(() => {
+    if (!activeFileId) return;
+    const key = `peregrine:recent:${projectId}`;
+    setRecentFileIds((prev) => {
+      const next = [activeFileId, ...prev.filter((id) => id !== activeFileId)].slice(0, 10);
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [activeFileId, projectId]);
+
+  const removeRecent = useCallback((id: string) => {
+    const key = `peregrine:recent:${projectId}`;
+    setRecentFileIds((prev) => {
+      const next = prev.filter((r) => r !== id);
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [projectId]);
 
   // Persist expanded folder state to localStorage
   useEffect(() => {
@@ -1625,6 +1650,52 @@ function IDECore({ projectId }: { projectId: string }) {
                 Drop files to upload
               </div>
             )}
+
+            {/* Recent files */}
+            {recentFileIds.length > 0 && (() => {
+              const recentFiles = recentFileIds
+                .map((id) => files.find((f) => f.id === id))
+                .filter((f): f is ProjectFile => !!f);
+              if (recentFiles.length === 0) return null;
+              return (
+                <div className="border-b border-gray-700/50 pb-1 shrink-0">
+                  <div className="flex items-center justify-between px-3 py-1">
+                    <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Recent</span>
+                    <button
+                      onClick={() => { setRecentFileIds([]); try { localStorage.removeItem(`peregrine:recent:${projectId}`); } catch {} }}
+                      className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {recentFiles.map((f) => {
+                    const name = f.path.split("/").pop()!;
+                    const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+                    return (
+                      <div
+                        key={f.id}
+                        className={`group flex items-center gap-1 px-3 py-0.5 cursor-pointer hover:bg-gray-800 transition-colors ${activeFileId === f.id ? "bg-gray-700/60" : ""}`}
+                        onClick={() => openFile(f.id)}
+                      >
+                        <span className={`truncate text-xs flex-1 ${activeFileId === f.id ? "text-white" : "text-gray-400 group-hover:text-gray-200"}`}>
+                          {name}
+                        </span>
+                        {dir && (
+                          <span className="text-[10px] text-gray-600 truncate max-w-[70px] shrink-0 hidden group-hover:block">{dir}</span>
+                        )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeRecent(f.id); }}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-gray-400 text-sm leading-none shrink-0 ml-0.5 transition-opacity"
+                          title="Remove from recent"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {loading ? (
               <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
