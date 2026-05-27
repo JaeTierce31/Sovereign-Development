@@ -178,6 +178,7 @@ function TreeNodeRow({
     return (
       <>
         <button
+          data-path={node.fullPath}
           onClick={() => { toggleFolder(node.fullPath); onFocus(node.fullPath); }}
           onContextMenu={(e) => { e.preventDefault(); onFolderContextMenu(e, node.fullPath); }}
           className={`w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors ${isFocused ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
@@ -248,6 +249,7 @@ function TreeNodeRow({
 
   return (
     <div
+      data-path={node.fullPath}
       className={`group flex items-center ${isActive ? "bg-gray-700" : "hover:bg-gray-800"} ${isFocused && !isActive ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
       style={{ paddingLeft: `${8 + indent}px` }}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file.id, file.path); }}
@@ -289,6 +291,7 @@ export default function FileTree(props: FileTreeProps) {
   const [copiedFolderPath, setCopiedFolderPath] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const folderMenuRef = useRef<HTMLDivElement>(null);
+  const treeContainerRef = useRef<HTMLDivElement>(null);
 
   // Auto-expand folders that contain the active file
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
@@ -348,8 +351,18 @@ export default function FileTree(props: FileTreeProps) {
 
   const flat = useMemo(() => flattenVisible(tree, expandedFolders), [tree, expandedFolders]);
 
+  // Scroll focused node into view
+  useEffect(() => {
+    if (!focusedPath || !treeContainerRef.current) return;
+    const el = treeContainerRef.current.querySelector<HTMLElement>(`[data-path="${CSS.escape(focusedPath)}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [focusedPath]);
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Delete", "Backspace"].indexOf(e.key) === -1) return;
+    const handled = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Delete", "Backspace", "Home", "End", "F2"];
+    if (!handled.includes(e.key)) return;
+    // Don't steal Home/End/Delete from rename inputs
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     e.preventDefault();
 
     const idx = focusedPath ? flat.findIndex((n) => n.fullPath === focusedPath) : -1;
@@ -364,6 +377,15 @@ export default function FileTree(props: FileTreeProps) {
       case "ArrowUp": {
         const prev = idx > 0 ? flat[idx - 1] : flat[flat.length - 1];
         if (prev) setFocusedPath(prev.fullPath);
+        break;
+      }
+      case "Home": {
+        if (flat[0]) setFocusedPath(flat[0].fullPath);
+        break;
+      }
+      case "End": {
+        const last = flat[flat.length - 1];
+        if (last) setFocusedPath(last.fullPath);
         break;
       }
       case "ArrowRight": {
@@ -396,6 +418,11 @@ export default function FileTree(props: FileTreeProps) {
         else if (node.file) props.onOpenFile(node.file.id);
         break;
       }
+      case "F2": {
+        if (!node || node.type !== "file" || !node.file) break;
+        props.onStartRename(node.file.id, node.file.path);
+        break;
+      }
       case "Delete":
       case "Backspace": {
         if (!node || node.type !== "file" || !node.file) break;
@@ -423,6 +450,7 @@ export default function FileTree(props: FileTreeProps) {
 
   return (
     <div
+      ref={treeContainerRef}
       className="flex-1 overflow-auto relative focus:outline-none"
       tabIndex={0}
       onKeyDown={handleKeyDown}
