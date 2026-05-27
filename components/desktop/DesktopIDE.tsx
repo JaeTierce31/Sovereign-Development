@@ -17,6 +17,7 @@ import InlineAiCommand from "./InlineAiCommand";
 import ProjectSettingsPanel from "./ProjectSettingsPanel";
 import ProjectStatsPanel from "./ProjectStatsPanel";
 import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
+import OutlinePanel from "./OutlinePanel";
 import { timeAgo } from "@/lib/timeAgo";
 
 interface EditorPrefs {
@@ -360,7 +361,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search">("explorer");
+  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline">("explorer");
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const isDraggingSidebar = useRef(false);
   const [termHeightPx, setTermHeightPx] = useState(TERM_HEIGHT_DEFAULT);
@@ -1486,6 +1487,16 @@ function IDECore({ projectId }: { projectId: string }) {
             </svg>
             Search
           </button>
+          <button
+            onClick={() => setSidebarTab("outline")}
+            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "outline" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
+            title="Outline (symbols in current file)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path d="M4 6h16M4 12h10M4 18h7" strokeLinecap="round" />
+            </svg>
+            Outline
+          </button>
         </div>
 
         {sidebarTab === "explorer" ? (
@@ -1580,7 +1591,7 @@ function IDECore({ projectId }: { projectId: string }) {
               />
             )}
           </>
-        ) : (
+        ) : sidebarTab === "search" ? (
           <GlobalSearch
             projectId={projectId}
             files={files}
@@ -1591,6 +1602,25 @@ function IDECore({ projectId }: { projectId: string }) {
             }}
             inline
           />
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 shrink-0">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Outline</span>
+              {activeFile && <span className="text-[10px] text-gray-600 truncate max-w-[100px]">{activeFile.path.split("/").pop()}</span>}
+            </div>
+            <OutlinePanel
+              content={activeFile?.content ?? null}
+              language={activeFile?.language ?? null}
+              onGoToLine={(line) => {
+                if (!editorInstanceRef.current) return;
+                type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+                const ed = editorInstanceRef.current as Ed;
+                ed.revealLineInCenter(line);
+                ed.setPosition({ lineNumber: line, column: 1 });
+                ed.focus();
+              }}
+            />
+          </>
         )}
         {/* Drag handle */}
         <div
