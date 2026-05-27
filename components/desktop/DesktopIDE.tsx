@@ -34,10 +34,14 @@ interface EditorPrefs {
   renderWhitespace: "none" | "boundary" | "all";
   cursorStyle: "line" | "block" | "underline";
   lineNumbers: "on" | "off";
+  bracketPairColorization: boolean;
+  quickSuggestions: boolean;
+  autoClosingBrackets: "always" | "languageDefined" | "never";
+  fontLigatures: boolean;
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on" };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on", bracketPairColorization: true, quickSuggestions: true, autoClosingBrackets: "languageDefined", fontLigatures: true };
 
 const FONT_URLS: Record<string, string> = {
   "JetBrains Mono": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
@@ -1564,7 +1568,7 @@ function IDECore({ projectId }: { projectId: string }) {
                           padding: { top: 8, bottom: 8 },
                           renderSideBySide: true,
                           fontFamily: FONT_OPTIONS.find((f) => f.value === prefs.fontFamily)?.stack || undefined,
-                          fontLigatures: prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
+                          fontLigatures: prefs.fontLigatures && prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
                           lineNumbers: prefs.lineNumbers,
                         }}
                         onMount={(diff, monaco) => {
@@ -1627,10 +1631,14 @@ function IDECore({ projectId }: { projectId: string }) {
                           renderLineHighlight: "all",
                           padding: { top: 8, bottom: 8 },
                           fontFamily: FONT_OPTIONS.find((f) => f.value === prefs.fontFamily)?.stack || undefined,
-                          fontLigatures: prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
+                          fontLigatures: prefs.fontLigatures && prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
                           renderWhitespace: prefs.renderWhitespace,
                           cursorStyle: prefs.cursorStyle,
                           lineNumbers: prefs.lineNumbers,
+                          bracketPairColorization: { enabled: prefs.bracketPairColorization },
+                          quickSuggestions: prefs.quickSuggestions,
+                          autoClosingBrackets: prefs.autoClosingBrackets,
+                          autoClosingQuotes: prefs.autoClosingBrackets === "never" ? "never" : "languageDefined",
                         }}
                       />
                     )
@@ -1719,6 +1727,10 @@ function IDECore({ projectId }: { projectId: string }) {
                               cursorSmoothCaretAnimation: "on",
                               renderLineHighlight: "all",
                               padding: { top: 8, bottom: 8 },
+                              bracketPairColorization: { enabled: prefs.bracketPairColorization },
+                              quickSuggestions: prefs.quickSuggestions,
+                              autoClosingBrackets: prefs.autoClosingBrackets,
+                              autoClosingQuotes: prefs.autoClosingBrackets === "never" ? "never" : "languageDefined",
                             }}
                           />
                         )
@@ -2366,6 +2378,51 @@ function IDECore({ projectId }: { projectId: string }) {
                     </button>
                   ))}
                 </div>
+              </div>
+              {/* Bracket pair colorization */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Bracket colors</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, bracketPairColorization: !p.bracketPairColorization }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.bracketPairColorization ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.bracketPairColorization ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Quick suggestions (IntelliSense) */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Suggestions</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, quickSuggestions: !p.quickSuggestions }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.quickSuggestions ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.quickSuggestions ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Auto-closing brackets */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Auto-close</label>
+                <div className="flex gap-1">
+                  {(["always", "languageDefined", "never"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setPrefs((p) => ({ ...p, autoClosingBrackets: v }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${prefs.autoClosingBrackets === v ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                    >
+                      {v === "languageDefined" ? "Auto" : v === "always" ? "On" : "Off"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Font ligatures */}
+              <div className={`flex items-center justify-between ${prefs.fontFamily === "default" || prefs.fontFamily === "system" ? "opacity-40 pointer-events-none" : ""}`}>
+                <label className="text-xs text-gray-400">Ligatures</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, fontLigatures: !p.fontLigatures }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.fontLigatures ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.fontLigatures ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
               </div>
               {/* Reset */}
               <button
