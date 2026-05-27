@@ -785,6 +785,16 @@ function IDECore({ projectId }: { projectId: string }) {
           setActiveFileId(prev[(idx - 1 + prev.length) % prev.length]);
           return prev;
         });
+      } else if (mod && /^[0-9]$/.test(e.key)) {
+        // Ctrl/Cmd+1–9 → jump to that tab; Ctrl/Cmd+0 → last tab
+        e.preventDefault();
+        setOpenTabs((prev) => {
+          if (prev.length === 0) return prev;
+          const n = parseInt(e.key, 10);
+          const target = n === 0 ? prev[prev.length - 1] : prev[n - 1];
+          if (target) openFile(target);
+          return prev;
+        });
       } else if (mod && e.shiftKey && (e.key === "t" || e.key === "T")) {
         e.preventDefault();
         const history = closedTabHistory.current;
@@ -2652,6 +2662,8 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift H", "Local history"],
                 ["⌘/Ctrl PageDown", "Next tab"],
                 ["⌘/Ctrl PageUp", "Previous tab"],
+                ["⌘/Ctrl 1–9", "Jump to Nth tab"],
+                ["⌘/Ctrl 0", "Jump to last tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
                 ["⌘/Ctrl S", "Save immediately"],
                 ["⌘/Ctrl ,", "Editor settings"],
