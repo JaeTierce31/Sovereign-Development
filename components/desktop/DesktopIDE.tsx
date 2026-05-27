@@ -212,6 +212,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const savedContentRef = useRef<Map<string, string>>(new Map());
   const [breadcrumbPopover, setBreadcrumbPopover] = useState<{ folderPath: string; x: number; y: number } | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [zenMode, setZenMode] = useState(false);
+  const preZenState = useRef<{ sidebar: boolean; term: boolean } | null>(null);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -508,6 +510,22 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
         setCommandPaletteOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        setZenMode((on) => {
+          if (!on) {
+            preZenState.current = { sidebar: sidebarOpen, term: termOpen };
+            setSidebarOpen(false);
+            setTermOpen(false);
+          } else {
+            if (preZenState.current) {
+              setSidebarOpen(preZenState.current.sidebar);
+              setTermOpen(preZenState.current.term);
+            }
+            preZenState.current = null;
+          }
+          return !on;
+        });
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSearchOpen((v) => !v);
@@ -527,6 +545,14 @@ function IDECore({ projectId }: { projectId: string }) {
         if (gotoLineOpen) setGotoLineOpen(false);
         else if (inlineAiOpen) setInlineAiOpen(false);
         else if (commandPaletteOpen) setCommandPaletteOpen(false);
+        else if (zenMode) setZenMode((on) => {
+          if (on && preZenState.current) {
+            setSidebarOpen(preZenState.current.sidebar);
+            setTermOpen(preZenState.current.term);
+            preZenState.current = null;
+          }
+          return false;
+        });
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -540,7 +566,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -825,6 +851,24 @@ function IDECore({ projectId }: { projectId: string }) {
   function openTerminal() {
     setTermOpen(true);
   }
+
+  const toggleZen = useCallback(() => {
+    setZenMode((on) => {
+      if (!on) {
+        preZenState.current = { sidebar: sidebarOpen, term: termOpen };
+        setSidebarOpen(false);
+        setTermOpen(false);
+      } else {
+        if (preZenState.current) {
+          setSidebarOpen(preZenState.current.sidebar);
+          setTermOpen(preZenState.current.term);
+        }
+        preZenState.current = null;
+      }
+      return !on;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidebarOpen, termOpen]);
 
   return (
     <div className="h-full w-full flex bg-peregrine-dark">
@@ -1182,6 +1226,13 @@ function IDECore({ projectId }: { projectId: string }) {
               title="Keyboard shortcuts (?)"
             >
               ?
+            </button>
+            <button
+              onClick={toggleZen}
+              className={`px-2 py-1 text-xs rounded transition-colors ${zenMode ? "text-purple-400 hover:text-purple-300 bg-purple-900/20" : "text-gray-600 hover:text-gray-400"}`}
+              title={zenMode ? "Exit zen mode (⌘/Ctrl Shift Z)" : "Zen mode (⌘/Ctrl Shift Z)"}
+            >
+              ⛶
             </button>
           </div>
         </div>
@@ -1658,6 +1709,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "toggle-ai", label: "Toggle AI Panel", icon: "✦", action: () => setAiOpen((v) => !v) },
             { id: "toggle-split", label: "Toggle Split Editor", description: "⌘/Ctrl \\", icon: "⫴", action: () => setSplitFileId((cur) => cur ? null : (activeFileId ?? null)) },
             { id: "toggle-diff", label: "Toggle Diff View", icon: "±", action: () => setDiffMode((v) => !v) },
+            { id: "zen-mode", label: zenMode ? "Exit Zen Mode" : "Zen Mode", description: "⌘/Ctrl Shift Z", icon: "⛶", action: toggleZen },
             { id: "keyboard-shortcuts", label: "Keyboard Shortcuts", description: "?", icon: "?", action: () => setShortcutsOpen(true) },
             { id: "project-settings", label: "Project Settings", icon: "⚙", action: () => setProjectSettingsOpen(true) },
           ]}
@@ -1802,6 +1854,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl N", "New file"],
                 ["⌘/Ctrl P", "Quick file open"],
                 ["⌘/Ctrl Shift P", "Command palette"],
+                ["⌘/Ctrl Shift Z", "Toggle zen mode"],
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
