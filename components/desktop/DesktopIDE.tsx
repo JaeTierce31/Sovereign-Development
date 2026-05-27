@@ -39,6 +39,8 @@ interface EditorPrefs {
   quickSuggestions: boolean;
   autoClosingBrackets: "always" | "languageDefined" | "never";
   fontLigatures: boolean;
+  autoSave: "off" | "afterDelay";
+  autoSaveDelay: 500 | 1000 | 2000 | 5000;
 }
 
 interface Problem {
@@ -50,7 +52,7 @@ interface Problem {
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on", bracketPairColorization: true, quickSuggestions: true, autoClosingBrackets: "languageDefined", fontLigatures: true };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on", bracketPairColorization: true, quickSuggestions: true, autoClosingBrackets: "languageDefined", fontLigatures: true, autoSave: "afterDelay", autoSaveDelay: 1000 };
 
 const FONT_URLS: Record<string, string> = {
   "JetBrains Mono": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
@@ -961,9 +963,13 @@ function IDECore({ projectId }: { projectId: string }) {
         prev.map((f) => (f.id === activeFileId ? { ...f, content: value } : f))
       );
       setDirtyTabs((prev) => { const next = new Set(prev); next.add(activeFileId); return next; });
-      setSaveStatus("saving");
       pendingSave.current = { id: activeFileId, value };
       if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (prefs.autoSave === "off") {
+        setSaveStatus("idle");
+        return;
+      }
+      setSaveStatus("saving");
       saveTimer.current = setTimeout(() => {
         pendingSave.current = null;
         setDirtyTabs((prev) => { const next = new Set(prev); next.delete(activeFileId); return next; });
@@ -979,9 +985,9 @@ function IDECore({ projectId }: { projectId: string }) {
           if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
           saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
         });
-      }, 800);
+      }, prefs.autoSaveDelay);
     },
-    [activeFileId, projectId]
+    [activeFileId, projectId, prefs.autoSave, prefs.autoSaveDelay]
   );
 
   const handleSplitChange = useCallback(
@@ -2590,6 +2596,33 @@ function IDECore({ projectId }: { projectId: string }) {
                   ))}
                 </select>
               </div>
+              {/* Auto save */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Auto save</label>
+                <div className="flex gap-1">
+                  {(["off", "afterDelay"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setPrefs((p) => ({ ...p, autoSave: v }))}
+                      className={`px-2 py-0.5 text-xs rounded border transition-colors ${prefs.autoSave === v ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                    >{v === "off" ? "Off" : "Delay"}</button>
+                  ))}
+                </div>
+              </div>
+              {prefs.autoSave === "afterDelay" && (
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-gray-400">Save delay</label>
+                  <div className="flex gap-1">
+                    {([500, 1000, 2000, 5000] as const).map((ms) => (
+                      <button
+                        key={ms}
+                        onClick={() => setPrefs((p) => ({ ...p, autoSaveDelay: ms }))}
+                        className={`px-1.5 py-0.5 text-xs rounded border transition-colors ${prefs.autoSaveDelay === ms ? "border-blue-500 bg-blue-600/20 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}
+                      >{ms < 1000 ? `${ms}ms` : `${ms / 1000}s`}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Format on save */}
               <div className="flex items-center justify-between">
                 <label className="text-xs text-gray-400">Format on save</label>
