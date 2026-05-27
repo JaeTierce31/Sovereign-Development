@@ -16,6 +16,7 @@ import MarkdownPreview from "./MarkdownPreview";
 import InlineAiCommand from "./InlineAiCommand";
 import ProjectSettingsPanel from "./ProjectSettingsPanel";
 import ProjectStatsPanel from "./ProjectStatsPanel";
+import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
 import { timeAgo } from "@/lib/timeAgo";
 
 interface EditorPrefs {
@@ -335,6 +336,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [editorReady, setEditorReady] = useState(false);
   const [selectionStats, setSelectionStats] = useState<{ chars: number; lines: number } | null>(null);
   const [fileIndentOverride, setFileIndentOverride] = useState<{ insertSpaces: boolean; tabSize: number } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const localHistoryRef = useRef<Map<string, Snapshot[]>>(new Map());
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -669,6 +672,12 @@ function IDECore({ projectId }: { projectId: string }) {
               setSaveStatus("saved");
               if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
               saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
+              // Capture local history snapshot on manual save
+              const prev = localHistoryRef.current.get(id) ?? [];
+              const last = prev[0];
+              if (!last || last.content !== value) {
+                localHistoryRef.current.set(id, [{ savedAt, content: value }, ...prev].slice(0, 20));
+              }
             });
           }
         })();
@@ -711,6 +720,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
         setCommandPaletteOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "h" || e.key === "H")) {
+        e.preventDefault();
+        if (activeFileId) setHistoryOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         setZenMode((on) => {
@@ -1521,6 +1533,14 @@ function IDECore({ projectId }: { projectId: string }) {
               ↓ ZIP
             </button>
             <button
+              onClick={() => { if (activeFileId) setHistoryOpen((v) => !v); }}
+              className={`px-2 py-1 text-xs rounded transition-colors ${historyOpen ? "text-amber-400 bg-amber-900/20" : "text-gray-600 hover:text-gray-400"}`}
+              title="Local history (⌘/Ctrl Shift H)"
+              disabled={!activeFileId}
+            >
+              ⌛
+            </button>
+            <button
               onClick={() => setShortcutsOpen(true)}
               className="px-2 py-1 text-xs text-gray-600 hover:text-gray-400 transition-colors"
               title="Keyboard shortcuts (?)"
@@ -2164,6 +2184,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "keyboard-shortcuts", label: "Keyboard Shortcuts", description: "?", icon: "?", action: () => setShortcutsOpen(true) },
             { id: "project-settings", label: "Project Settings", icon: "⚙", action: () => setProjectSettingsOpen(true) },
             { id: "import-url", label: "Import File from URL", description: "Fetch & save a file from a URL", icon: "↓", action: () => { setImportUrlOpen(true); setImportUrlVal(""); setImportUrlError(""); } },
+            { id: "local-history", label: "Local History", description: "Browse file version snapshots", icon: "⌛", action: () => { if (activeFileId) setHistoryOpen(true); } },
           ]}
         />
       )}
@@ -2453,6 +2474,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["⌘/Ctrl Shift T", "Reopen closed tab"],
+                ["⌘/Ctrl Shift H", "Local history"],
                 ["⌘/Ctrl PageDown", "Next tab"],
                 ["⌘/Ctrl PageUp", "Previous tab"],
                 ["⌘/Ctrl `", "Toggle terminal"],
@@ -2503,6 +2525,21 @@ function IDECore({ projectId }: { projectId: string }) {
           <button onClick={() => setUploadToast(null)} className="text-gray-400 hover:text-white ml-1">×</button>
         </div>
       )}
+      {historyOpen && activeFile && (() => {
+        const snapshots = localHistoryRef.current.get(activeFile.id) ?? [];
+        return (
+          <LocalHistoryPanel
+            fileId={activeFile.id}
+            currentContent={activeFile.content ?? ""}
+            snapshots={snapshots}
+            onRestore={(content) => {
+              setFiles((prev) => prev.map((f) => f.id === activeFile.id ? { ...f, content } : f));
+              setDirtyTabs((prev) => { const next = new Set(prev); next.add(activeFile.id); return next; });
+            }}
+            onClose={() => setHistoryOpen(false)}
+          />
+        );
+      })()}
       {projectSettingsOpen && (
         <ProjectSettingsPanel
           projectId={projectId}
