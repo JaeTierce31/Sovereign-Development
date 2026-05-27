@@ -217,6 +217,13 @@ function IDECore({ projectId }: { projectId: string }) {
   const preZenState = useRef<{ sidebar: boolean; term: boolean } | null>(null);
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [langFilter, setLangFilter] = useState("");
+  const [uploadToast, setUploadToast] = useState<string | null>(null);
+  const uploadToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [importUrlOpen, setImportUrlOpen] = useState(false);
+  const [importUrlVal, setImportUrlVal] = useState("");
+  const [importUrlError, setImportUrlError] = useState("");
+  const [importUrlLoading, setImportUrlLoading] = useState(false);
+  const importUrlRef = useRef<HTMLInputElement>(null);
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -440,6 +447,10 @@ function IDECore({ projectId }: { projectId: string }) {
     if (gotoLineOpen) setTimeout(() => { gotoLineRef.current?.select(); }, 0);
   }, [gotoLineOpen]);
 
+  useEffect(() => {
+    if (importUrlOpen) setTimeout(() => importUrlRef.current?.focus(), 0);
+  }, [importUrlOpen]);
+
   // Global keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -566,6 +577,7 @@ function IDECore({ projectId }: { projectId: string }) {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (breadcrumbPopover) { setBreadcrumbPopover(null); return; }
         if (langPickerOpen) { setLangPickerOpen(false); return; }
+        if (importUrlOpen) { setImportUrlOpen(false); return; }
         if (gotoLineOpen) setGotoLineOpen(false);
         else if (inlineAiOpen) setInlineAiOpen(false);
         else if (commandPaletteOpen) setCommandPaletteOpen(false);
@@ -590,7 +602,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -806,7 +818,10 @@ function IDECore({ projectId }: { projectId: string }) {
   }
 
   async function uploadFiles(fileList: FileList) {
-    const uploads = Array.from(fileList).filter((f) => f.size < 5_000_000);
+    const all = Array.from(fileList);
+    const tooLarge = all.filter((f) => f.size >= 5_000_000);
+    const uploads = all.filter((f) => f.size < 5_000_000);
+    let successCount = 0;
     for (const file of uploads) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
       if (!IMAGE_EXTS.has(ext) && file.size >= 1_000_000) continue;
@@ -834,7 +849,16 @@ function IDECore({ projectId }: { projectId: string }) {
           return [...prev, created];
         });
         openFile(created.id);
+        successCount++;
       }
+    }
+    if (successCount > 0 || tooLarge.length > 0) {
+      const parts: string[] = [];
+      if (successCount > 0) parts.push(`${successCount} file${successCount !== 1 ? "s" : ""} uploaded`);
+      if (tooLarge.length > 0) parts.push(`${tooLarge.length} skipped (>5 MB)`);
+      if (uploadToastTimer.current) clearTimeout(uploadToastTimer.current);
+      setUploadToast(parts.join(" · "));
+      uploadToastTimer.current = setTimeout(() => setUploadToast(null), 3500);
     }
   }
 
@@ -857,6 +881,55 @@ function IDECore({ projectId }: { projectId: string }) {
 
   const shareUrl = typeof window !== "undefined"
     ? `${window.location.origin}/share/${projectId}` : "";
+
+  function downloadFile(fileId: string) {
+    const file = files.find((f) => f.id === fileId);
+    if (!file) return;
+    const blob = new Blob([file.content ?? ""], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.path.split("/").pop() ?? file.path;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importFromUrl() {
+    const url = importUrlVal.trim();
+    if (!url) return;
+    setImportUrlLoading(true);
+    setImportUrlError("");
+    try {
+      const res = await fetch("/api/fetch-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json() as { content?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Fetch failed");
+      const filename = url.split("/").pop()?.split("?")[0] || "imported.txt";
+      const createRes = await fetch(`/api/projects/${projectId}/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filename, content: data.content ?? "" }),
+      });
+      if (createRes.ok) {
+        const created: ProjectFile = await createRes.json();
+        setFiles((prev) =>
+          prev.some((f) => f.path === created.path)
+            ? prev.map((f) => (f.path === created.path ? created : f))
+            : [...prev, created]
+        );
+        openFile(created.id);
+      }
+      setImportUrlOpen(false);
+      setImportUrlVal("");
+    } catch (err) {
+      setImportUrlError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImportUrlLoading(false);
+    }
+  }
 
   async function exportProject() {
     const zip = new JSZip();
@@ -1658,6 +1731,10 @@ function IDECore({ projectId }: { projectId: string }) {
                   if (f) navigator.clipboard.writeText(f.path).catch(() => {});
                 },
               },
+              {
+                label: "Download File",
+                action: () => downloadFile(tabContextMenu.tabId),
+              },
             ].map((item, i) =>
               item === null ? (
                 <div key={i} className="my-1 border-t border-gray-800" />
@@ -1752,6 +1829,56 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      {importUrlOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4 bg-black/50"
+          onClick={() => setImportUrlOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-200">Import File from URL</span>
+              <button onClick={() => setImportUrlOpen(false)} className="text-gray-500 hover:text-gray-300 text-lg leading-none">×</button>
+            </div>
+            <form
+              onSubmit={(e) => { e.preventDefault(); importFromUrl(); }}
+              className="p-4 flex flex-col gap-3"
+            >
+              <input
+                ref={importUrlRef}
+                type="url"
+                value={importUrlVal}
+                onChange={(e) => { setImportUrlVal(e.target.value); setImportUrlError(""); }}
+                onKeyDown={(e) => { if (e.key === "Escape") setImportUrlOpen(false); }}
+                placeholder="https://example.com/script.js"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 focus:border-blue-500 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none"
+              />
+              {importUrlError && (
+                <p className="text-xs text-red-400">{importUrlError}</p>
+              )}
+              <p className="text-xs text-gray-500">The file will be fetched server-side and saved to your project. Text and code files only (max 2 MB).</p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportUrlOpen(false)}
+                  className="px-3 py-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!importUrlVal.trim() || importUrlLoading}
+                  className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  {importUrlLoading ? "Fetching…" : "Import"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {statsOpen && (
         <ProjectStatsPanel
           files={files}
@@ -1783,6 +1910,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "zen-mode", label: zenMode ? "Exit Zen Mode" : "Zen Mode", description: "⌘/Ctrl Shift Z", icon: "⛶", action: toggleZen },
             { id: "keyboard-shortcuts", label: "Keyboard Shortcuts", description: "?", icon: "?", action: () => setShortcutsOpen(true) },
             { id: "project-settings", label: "Project Settings", icon: "⚙", action: () => setProjectSettingsOpen(true) },
+            { id: "import-url", label: "Import File from URL", description: "Fetch & save a file from a URL", icon: "↓", action: () => { setImportUrlOpen(true); setImportUrlVal(""); setImportUrlError(""); } },
           ]}
         />
       )}
@@ -1981,6 +2109,13 @@ function IDECore({ projectId }: { projectId: string }) {
           >
             ×
           </button>
+        </div>
+      )}
+      {uploadToast && (
+        <div className="fixed bottom-6 right-6 flex items-center gap-3 px-4 py-3 bg-gray-800 border border-gray-600 rounded-xl shadow-xl text-sm text-white z-50">
+          <span className="text-green-400">✓</span>
+          <span>{uploadToast}</span>
+          <button onClick={() => setUploadToast(null)} className="text-gray-400 hover:text-white ml-1">×</button>
         </div>
       )}
       {projectSettingsOpen && (
