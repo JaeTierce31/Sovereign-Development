@@ -385,6 +385,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const gotoLineRef = useRef<HTMLInputElement>(null);
   const dragTabIndex = useRef<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  const [tabStripOverflow, setTabStripOverflow] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const [tabContextMenu, setTabContextMenu] = useState<{ tabId: string; x: number; y: number } | null>(null);
   const closedTabHistory = useRef<string[]>([]);
   const filesRef = useRef(files);
@@ -638,6 +640,27 @@ function IDECore({ projectId }: { projectId: string }) {
   }, [importUrlOpen]);
 
   useEffect(() => { setSelectionStats(null); }, [activeFileId]);
+
+  // Scroll active tab into view and update overflow indicators
+  useEffect(() => {
+    const strip = tabStripRef.current;
+    if (!strip) return;
+    const activeTab = strip.querySelector<HTMLElement>('[data-active="true"]');
+    if (activeTab) {
+      activeTab.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+    const update = () => {
+      setTabStripOverflow({
+        left: strip.scrollLeft > 0,
+        right: strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1,
+      });
+    };
+    update();
+    strip.addEventListener("scroll", update);
+    const ro = new ResizeObserver(update);
+    ro.observe(strip);
+    return () => { strip.removeEventListener("scroll", update); ro.disconnect(); };
+  }, [activeFileId, openTabs]);
 
   // Load Google Font when a web font is selected
   useEffect(() => {
@@ -1352,7 +1375,24 @@ function IDECore({ projectId }: { projectId: string }) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Tab bar */}
         {openTabs.length > 0 && (
-          <div className="flex items-end bg-gray-950 border-b border-gray-700 overflow-x-auto shrink-0" style={{ minHeight: "32px" }}>
+          <div className="relative shrink-0">
+            {tabStripOverflow.left && (
+              <div className="absolute left-0 top-0 bottom-0 w-8 z-10 pointer-events-none bg-gradient-to-r from-gray-950 to-transparent" />
+            )}
+            {tabStripOverflow.right && (
+              <div className="absolute right-0 top-0 bottom-0 w-8 z-10 pointer-events-none bg-gradient-to-l from-gray-950 to-transparent" />
+            )}
+          <div
+            ref={tabStripRef}
+            className="flex items-end bg-gray-950 border-b border-gray-700 overflow-x-auto shrink-0"
+            style={{ minHeight: "32px", scrollbarWidth: "none", msOverflowStyle: "none" } as React.CSSProperties}
+            onWheel={(e) => {
+              if (e.deltaY !== 0 && tabStripRef.current) {
+                e.preventDefault();
+                tabStripRef.current.scrollLeft += e.deltaY;
+              }
+            }}
+          >
             {[...openTabs.filter((id) => pinnedTabs.has(id)), ...openTabs.filter((id) => !pinnedTabs.has(id))].map((tabId, tabIdx) => {
               const tabFile = files.find((f) => f.id === tabId);
               if (!tabFile) return null;
@@ -1393,6 +1433,7 @@ function IDECore({ projectId }: { projectId: string }) {
                     e.preventDefault();
                     setTabContextMenu({ tabId, x: e.clientX, y: e.clientY });
                   }}
+                  data-active={isActive ? "true" : undefined}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-r border-gray-700 cursor-pointer shrink-0 select-none transition-colors ${
                     isActive
                       ? "bg-gray-900 text-white border-t-2 border-t-blue-500"
@@ -1418,6 +1459,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 </div>
               );
             })}
+          </div>
           </div>
         )}
 
