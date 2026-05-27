@@ -136,6 +136,8 @@ interface FileTreeProps {
   onNewFileInFolder?: (folderPath: string) => void;
   onRenameFolder?: (folderPath: string) => void;
   onDeleteFolder?: (folderPath: string) => void;
+  expandedFolders: Set<string>;
+  onToggleFolder: (path: string) => void;
 }
 
 function TreeNodeRow({
@@ -155,6 +157,7 @@ function TreeNodeRow({
   onRenameFolder,
   onDeleteFolder,
   expandedFolders,
+  onToggleFolder,
   toggleFolder,
   onContextMenu,
   onFolderContextMenu,
@@ -209,6 +212,7 @@ function TreeNodeRow({
             onRenameFolder={onRenameFolder}
             onDeleteFolder={onDeleteFolder}
             expandedFolders={expandedFolders}
+            onToggleFolder={onToggleFolder}
             toggleFolder={toggleFolder}
             onContextMenu={onContextMenu}
             onFolderContextMenu={onFolderContextMenu}
@@ -282,7 +286,7 @@ function TreeNodeRow({
 }
 
 export default function FileTree(props: FileTreeProps) {
-  const { files } = props;
+  const { files, expandedFolders, onToggleFolder } = props;
   const tree = buildTree(files);
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -292,35 +296,6 @@ export default function FileTree(props: FileTreeProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const folderMenuRef = useRef<HTMLDivElement>(null);
   const treeContainerRef = useRef<HTMLDivElement>(null);
-
-  // Auto-expand folders that contain the active file
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
-    const active = files.find((f) => f.id === props.activeFileId);
-    if (!active) return new Set();
-    const parts = active.path.split("/");
-    const expanded = new Set<string>();
-    for (let i = 1; i < parts.length; i++) {
-      expanded.add(parts.slice(0, i).join("/"));
-    }
-    return expanded;
-  });
-
-  // Expand folder when active file changes
-  const prevActiveId = useRef(props.activeFileId);
-  useEffect(() => {
-    if (prevActiveId.current === props.activeFileId) return;
-    prevActiveId.current = props.activeFileId;
-    const active = files.find((f) => f.id === props.activeFileId);
-    if (!active) return;
-    const parts = active.path.split("/");
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      for (let i = 1; i < parts.length; i++) {
-        next.add(parts.slice(0, i).join("/"));
-      }
-      return next;
-    });
-  }, [props.activeFileId, files]);
 
   // Close context menus on outside click or Escape
   useEffect(() => {
@@ -341,12 +316,7 @@ export default function FileTree(props: FileTreeProps) {
   }, [contextMenu, folderContextMenu]);
 
   function toggleFolder(path: string) {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
+    onToggleFolder(path);
   }
 
   const flat = useMemo(() => flattenVisible(tree, expandedFolders), [tree, expandedFolders]);

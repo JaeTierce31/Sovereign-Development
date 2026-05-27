@@ -425,6 +425,24 @@ function IDECore({ projectId }: { projectId: string }) {
   const [importUrlError, setImportUrlError] = useState("");
   const [importUrlLoading, setImportUrlLoading] = useState(false);
   const importUrlRef = useRef<HTMLInputElement>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = localStorage.getItem(`peregrine:expanded:${projectId}`);
+      const arr: string[] = stored ? JSON.parse(stored) : [];
+      return new Set(arr);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleFolder = useCallback((path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   const openFile = useCallback((id: string) => {
     // Save current file's scroll/cursor state before switching
@@ -532,6 +550,28 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => { setDiffMode(false); }, [activeFileId]);
   useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
   useEffect(() => { setProblems([]); }, [activeFileId]);
+
+  // Persist expanded folder state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(`peregrine:expanded:${projectId}`, JSON.stringify([...expandedFolders]));
+    } catch {}
+  }, [expandedFolders, projectId]);
+
+  // Auto-expand parent folders when the active file changes
+  const prevExpandActiveRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeFileId || activeFileId === prevExpandActiveRef.current) return;
+    prevExpandActiveRef.current = activeFileId;
+    const active = files.find((f) => f.id === activeFileId);
+    if (!active) return;
+    const parts = active.path.split("/");
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
+      return next;
+    });
+  }, [activeFileId, files]);
 
   const startSidebarDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1384,13 +1424,38 @@ function IDECore({ projectId }: { projectId: string }) {
 
         <div className="flex items-center justify-between px-3 py-2">
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Explorer</span>
-          <button
-            onClick={() => setShowNewFile(true)}
-            className="text-gray-500 hover:text-gray-300 text-base leading-none transition-colors"
-            title="New file"
-          >
-            +
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const all = new Set<string>();
+                for (const f of files) {
+                  const parts = f.path.split("/");
+                  for (let i = 1; i < parts.length; i++) all.add(parts.slice(0, i).join("/"));
+                }
+                setExpandedFolders(all);
+              }}
+              className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
+              title="Expand all folders"
+              style={{ fontSize: "11px" }}
+            >
+              ⊞
+            </button>
+            <button
+              onClick={() => setExpandedFolders(new Set())}
+              className="text-gray-500 hover:text-gray-300 transition-colors leading-none"
+              title="Collapse all folders"
+              style={{ fontSize: "11px" }}
+            >
+              ⊟
+            </button>
+            <button
+              onClick={() => setShowNewFile(true)}
+              className="text-gray-500 hover:text-gray-300 text-base leading-none transition-colors"
+              title="New file"
+            >
+              +
+            </button>
+          </div>
         </div>
 
         {showNewFile && (
@@ -1440,6 +1505,8 @@ function IDECore({ projectId }: { projectId: string }) {
             onNewFileInFolder={newFileInFolder}
             onRenameFolder={startRenameFolder}
             onDeleteFolder={deleteFolder}
+            expandedFolders={expandedFolders}
+            onToggleFolder={toggleFolder}
           />
         )}
         {/* Drag handle */}
