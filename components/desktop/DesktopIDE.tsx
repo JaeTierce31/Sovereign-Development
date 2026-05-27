@@ -366,6 +366,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [fileIndentOverride, setFileIndentOverride] = useState<{ insertSpaces: boolean; tabSize: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const localHistoryRef = useRef<Map<string, Snapshot[]>>(new Map());
+  const viewStateMap = useRef<Map<string, unknown>>(new Map());
+  const activeFileIdRef = useRef<string | null>(null);
   const [isPublic, setIsPublic] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   const [projectName, setProjectName] = useState("");
@@ -411,6 +413,14 @@ function IDECore({ projectId }: { projectId: string }) {
   const importUrlRef = useRef<HTMLInputElement>(null);
 
   const openFile = useCallback((id: string) => {
+    // Save current file's scroll/cursor state before switching
+    const curId = activeFileIdRef.current;
+    if (curId && editorInstanceRef.current) {
+      const ed = editorInstanceRef.current as { saveViewState?: () => unknown };
+      const state = ed.saveViewState?.();
+      if (state) viewStateMap.current.set(curId, state);
+    }
+    activeFileIdRef.current = id;
     setActiveFileId(id);
     setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
   }, []);
@@ -481,6 +491,7 @@ function IDECore({ projectId }: { projectId: string }) {
   }, [prefs.keymap, editorReady]);
 
   useEffect(() => { setDiffMode(false); }, [activeFileId]);
+  useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
 
   const startSidebarDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1693,6 +1704,11 @@ function IDECore({ projectId }: { projectId: string }) {
                           vimModeRef.current?.dispose();
                           vimModeRef.current = null;
                           editorInstanceRef.current = editor;
+                          // Restore saved scroll/cursor position for this file
+                          const savedViewState = viewStateMap.current.get(activeFile.id);
+                          if (savedViewState) {
+                            editor.restoreViewState(savedViewState as Parameters<typeof editor.restoreViewState>[0]);
+                          }
                           setCursorPos({ line: 1, col: 1 });
                           setSelectionStats(null);
                           editor.onDidChangeCursorPosition((e: { position: { lineNumber: number; column: number } }) => {
