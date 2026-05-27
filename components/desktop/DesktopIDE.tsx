@@ -457,6 +457,13 @@ function IDECore({ projectId }: { projectId: string }) {
     setOpenTabs((prev) => prev.includes(id) ? prev : [...prev, id]);
   }, []);
 
+  const runEditorAction = useCallback(async (actionId: string) => {
+    if (!editorInstanceRef.current) return;
+    type Ed = { getAction: (id: string) => { run: () => Promise<void> } | null };
+    const action = (editorInstanceRef.current as Ed).getAction(actionId);
+    if (action) await action.run();
+  }, []);
+
   const saveAll = useCallback(async () => {
     const dirty = [...dirtyTabs];
     if (dirty.length === 0) return;
@@ -2498,6 +2505,29 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "local-history", label: "Local History", description: "Browse file version snapshots", icon: "⌛", action: () => { if (activeFileId) setHistoryOpen(true); } },
             ...(activeFileId && dirtyTabs.has(activeFileId) && savedContentRef.current.has(activeFileId) ? [{ id: "revert-file", label: "Revert File", description: "Discard unsaved changes", icon: "↩", action: () => revertFile(activeFileId) }] : []),
             { id: "toggle-problems", label: "Toggle Problems Panel", description: "Show errors and warnings", icon: "✗", action: () => setProblemsOpen((v) => !v) },
+            ...(editorInstanceRef.current ? [
+              { id: "format-document", label: "Format Document", description: "Shift+Alt+F", icon: "≋", action: () => runEditorAction("editor.action.formatDocument") },
+              { id: "toggle-line-comment", label: "Toggle Line Comment", description: "Ctrl+/", icon: "//", action: () => runEditorAction("editor.action.commentLine") },
+              { id: "toggle-block-comment", label: "Toggle Block Comment", description: "Shift+Alt+A", icon: "/*", action: () => runEditorAction("editor.action.blockComment") },
+              { id: "delete-line", label: "Delete Line", description: "Ctrl+Shift+K", icon: "−", action: () => runEditorAction("editor.action.deleteLines") },
+              { id: "duplicate-selection", label: "Duplicate Selection / Line", icon: "⊕", action: () => runEditorAction("editor.action.duplicateSelection") },
+              { id: "join-lines", label: "Join Lines", icon: "⇲", action: () => runEditorAction("editor.action.joinLines") },
+              { id: "sort-lines-asc", label: "Sort Lines Ascending", icon: "↑A", action: () => runEditorAction("editor.action.sortLinesAscending") },
+              { id: "sort-lines-desc", label: "Sort Lines Descending", icon: "↓A", action: () => runEditorAction("editor.action.sortLinesDescending") },
+              { id: "transform-upper", label: "Transform to UPPERCASE", icon: "AA", action: () => runEditorAction("editor.action.transformToUppercase") },
+              { id: "transform-lower", label: "Transform to lowercase", icon: "aa", action: () => runEditorAction("editor.action.transformToLowercase") },
+              { id: "transform-title", label: "Transform to Title Case", icon: "Aa", action: () => runEditorAction("editor.action.transformToTitlecase") },
+              { id: "trim-whitespace", label: "Trim Trailing Whitespace", icon: "⌫", action: () => runEditorAction("editor.action.trimTrailingWhitespace") },
+              { id: "indent-to-spaces", label: "Convert Indentation to Spaces", icon: "·→", action: () => runEditorAction("editor.action.indentationToSpaces") },
+              { id: "indent-to-tabs", label: "Convert Indentation to Tabs", icon: "⇥", action: () => runEditorAction("editor.action.indentationToTabs") },
+              { id: "copy-line-up", label: "Copy Line Up", description: "Shift+Alt+↑", icon: "⤴", action: () => runEditorAction("editor.action.copyLinesUpAction") },
+              { id: "copy-line-down", label: "Copy Line Down", description: "Shift+Alt+↓", icon: "⤵", action: () => runEditorAction("editor.action.copyLinesDownAction") },
+              { id: "move-line-up", label: "Move Line Up", description: "Alt+↑", icon: "↑", action: () => runEditorAction("editor.action.moveLinesUpAction") },
+              { id: "move-line-down", label: "Move Line Down", description: "Alt+↓", icon: "↓", action: () => runEditorAction("editor.action.moveLinesDownAction") },
+              { id: "select-occurrences", label: "Select All Occurrences", description: "Ctrl+Shift+L", icon: "⊞", action: () => runEditorAction("editor.action.selectHighlights") },
+              { id: "add-cursor-above", label: "Add Cursor Above", description: "Ctrl+Alt+↑", icon: "⊤", action: () => runEditorAction("editor.action.addCursorAbove") },
+              { id: "add-cursor-below", label: "Add Cursor Below", description: "Ctrl+Alt+↓", icon: "⊥", action: () => runEditorAction("editor.action.addCursorBelow") },
+            ] : []),
           ]}
         />
       )}
