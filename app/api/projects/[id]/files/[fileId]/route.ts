@@ -17,12 +17,20 @@ export async function PATCH(
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const { path } = await req.json();
-  if (!path?.trim()) return NextResponse.json({ error: 'Path required' }, { status: 400 });
+  const body = await req.json() as { path?: string; language?: string };
+  const setClause: { path?: string; language?: string; updatedAt: number } = { updatedAt: Date.now() };
+
+  if (body.path !== undefined) {
+    if (!body.path.trim()) return NextResponse.json({ error: 'Path required' }, { status: 400 });
+    setClause.path = body.path.trim();
+  }
+  if (body.language !== undefined) {
+    setClause.language = body.language;
+  }
 
   const [file] = await db
     .update(files)
-    .set({ path: path.trim(), updatedAt: Date.now() })
+    .set(setClause)
     .where(and(eq(files.id, params.fileId), eq(files.projectId, params.id)))
     .returning();
 

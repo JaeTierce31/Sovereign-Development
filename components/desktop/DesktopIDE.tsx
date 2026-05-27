@@ -27,10 +27,11 @@ interface EditorPrefs {
   stickyScroll: boolean;
   ruler: 80 | 120 | null;
   keymap: "default" | "vim";
+  formatOnSave: boolean;
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default" };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false };
 const TAB_SIZES = [2, 4, 8] as const;
 
 function getTabsKey(projectId: string) { return `peregrine:tabs:${projectId}`; }
@@ -214,6 +215,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [zenMode, setZenMode] = useState(false);
   const preZenState = useRef<{ sidebar: boolean; term: boolean } | null>(null);
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
+  const [langFilter, setLangFilter] = useState("");
 
   const openFile = useCallback((id: string) => {
     setActiveFileId(id);
@@ -455,22 +458,42 @@ function IDECore({ projectId }: { projectId: string }) {
         setTermOpen((v) => !v);
       } else if (mod && e.key === "s") {
         e.preventDefault();
-        // Flush debounced save immediately
-        if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-        if (pendingSave.current) {
-          const { id, value } = pendingSave.current;
-          pendingSave.current = null;
-          setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
-          fetch(`/api/projects/${projectId}/files/${id}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: value }),
-          }).then(() => {
-            setSaveStatus("saved");
-            if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
-            saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
-          });
-        }
+        (async () => {
+          // Format before save if enabled (Monaco handles js/ts/json/css/html natively)
+          if (prefs.formatOnSave && editorInstanceRef.current) {
+            type Ed = { getAction: (id: string) => { run: () => Promise<void> } | null; getValue: () => string };
+            const ed = editorInstanceRef.current as Ed;
+            try {
+              const action = ed.getAction('editor.action.formatDocument');
+              if (action) {
+                await action.run();
+                // Format changed the model → capture updated value for save
+                if (!pendingSave.current && activeFileId) {
+                  pendingSave.current = { id: activeFileId, value: ed.getValue() };
+                }
+              }
+            } catch { /* formatter unavailable for this language */ }
+          }
+          // Flush debounced save immediately
+          if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+          if (pendingSave.current) {
+            const { id, value } = pendingSave.current;
+            pendingSave.current = null;
+            setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
+            const savedAt = Date.now();
+            fetch(`/api/projects/${projectId}/files/${id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ content: value }),
+            }).then(() => {
+              savedContentRef.current.set(id, value);
+              setFiles((prev) => prev.map((f) => f.id === id ? { ...f, updatedAt: savedAt } : f));
+              setSaveStatus("saved");
+              if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+              saveStatusTimer.current = setTimeout(() => setSaveStatus("idle"), 2000);
+            });
+          }
+        })();
       } else if (mod && e.key === "w") {
         e.preventDefault();
         if (activeFileId && !pinnedTabs.has(activeFileId)) {
@@ -542,6 +565,7 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (e.key === "Escape") {
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (breadcrumbPopover) { setBreadcrumbPopover(null); return; }
+        if (langPickerOpen) { setLangPickerOpen(false); return; }
         if (gotoLineOpen) setGotoLineOpen(false);
         else if (inlineAiOpen) setInlineAiOpen(false);
         else if (commandPaletteOpen) setCommandPaletteOpen(false);
@@ -566,7 +590,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -1447,7 +1471,54 @@ function IDECore({ projectId }: { projectId: string }) {
             >
               {files.length} {files.length === 1 ? "file" : "files"}
             </button>
-            <span>{activeFile ? (activeFile.language ?? inferLanguage(activeFile.path)) : "—"}</span>
+            {activeFile ? (
+              <div className="relative">
+                <button
+                  onClick={() => { setLangPickerOpen((v) => !v); setLangFilter(""); }}
+                  className="hover:text-white transition-colors"
+                  title="Change language mode"
+                >
+                  {activeFile.language ?? inferLanguage(activeFile.path)}
+                </button>
+                {langPickerOpen && (
+                  <div className="absolute bottom-full mb-1 left-0 z-50 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-44 overflow-hidden">
+                    <input
+                      autoFocus
+                      value={langFilter}
+                      onChange={(e) => setLangFilter(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") setLangPickerOpen(false); }}
+                      placeholder="Filter…"
+                      className="w-full px-2 py-1.5 text-xs bg-gray-800 text-white placeholder-gray-600 border-b border-gray-700 focus:outline-none"
+                    />
+                    <div className="max-h-48 overflow-auto">
+                      {["plaintext","typescript","javascript","python","json","css","html","markdown","shell","rust","go","java","ruby","php","cpp","c","yaml","toml","sql","dockerfile","xml","graphql","swift","kotlin"]
+                        .filter((l) => l.includes(langFilter.toLowerCase()))
+                        .map((lang) => (
+                          <button
+                            key={lang}
+                            onClick={() => {
+                              setFiles((prev) => prev.map((f) => f.id === activeFileId ? { ...f, language: lang } : f));
+                              fetch(`/api/projects/${projectId}/files/${activeFileId}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ language: lang }),
+                              }).catch(() => {});
+                              setLangPickerOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-1 text-xs transition-colors ${
+                              (activeFile.language ?? inferLanguage(activeFile.path)) === lang
+                                ? "bg-blue-600/30 text-blue-300"
+                                : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                            }`}
+                          >
+                            {lang}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : <span>—</span>}
             {activeFile && (
               <button
                 onClick={() => { setGotoLineOpen(true); setGotoLineVal(String(cursorPos.line)); }}
@@ -1829,6 +1900,16 @@ function IDECore({ projectId }: { projectId: string }) {
                     </button>
                   ))}
                 </div>
+              </div>
+              {/* Format on save */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Format on save</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, formatOnSave: !p.formatOnSave }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.formatOnSave ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.formatOnSave ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
               </div>
               {/* Reset */}
               <button
