@@ -1215,6 +1215,18 @@ function IDECore({ projectId }: { projectId: string }) {
   const shareUrl = typeof window !== "undefined"
     ? `${window.location.origin}/share/${projectId}` : "";
 
+  function revertFile(fileId: string) {
+    const saved = savedContentRef.current.get(fileId);
+    if (saved === undefined) return;
+    if (saveTimer.current && pendingSave.current?.id === fileId) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      pendingSave.current = null;
+    }
+    setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, content: saved } : f));
+    setDirtyTabs((prev) => { const next = new Set(prev); next.delete(fileId); return next; });
+  }
+
   function downloadFile(fileId: string) {
     const file = files.find((f) => f.id === fileId);
     if (!file) return;
@@ -2218,6 +2230,10 @@ function IDECore({ projectId }: { projectId: string }) {
                 },
               },
               null,
+              ...(dirtyTabs.has(tabContextMenu.tabId) && savedContentRef.current.has(tabContextMenu.tabId) ? [{
+                label: "Revert File",
+                action: () => revertFile(tabContextMenu.tabId),
+              }, null as null] : []),
               {
                 label: "Copy Path",
                 action: () => {
@@ -2407,6 +2423,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "project-settings", label: "Project Settings", icon: "⚙", action: () => setProjectSettingsOpen(true) },
             { id: "import-url", label: "Import File from URL", description: "Fetch & save a file from a URL", icon: "↓", action: () => { setImportUrlOpen(true); setImportUrlVal(""); setImportUrlError(""); } },
             { id: "local-history", label: "Local History", description: "Browse file version snapshots", icon: "⌛", action: () => { if (activeFileId) setHistoryOpen(true); } },
+            ...(activeFileId && dirtyTabs.has(activeFileId) && savedContentRef.current.has(activeFileId) ? [{ id: "revert-file", label: "Revert File", description: "Discard unsaved changes", icon: "↩", action: () => revertFile(activeFileId) }] : []),
             { id: "toggle-problems", label: "Toggle Problems Panel", description: "Show errors and warnings", icon: "✗", action: () => setProblemsOpen((v) => !v) },
           ]}
         />
