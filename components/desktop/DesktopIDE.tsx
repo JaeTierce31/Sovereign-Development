@@ -288,6 +288,34 @@ function ImageViewer({ file, ext }: { file: { path: string; content: string | nu
   );
 }
 
+// File templates keyed by extension (lowercase)
+const FILE_TEMPLATES: Record<string, string> = {
+  tsx: `import React from 'react';\n\ninterface Props {}\n\nexport default function Component({}: Props) {\n  return (\n    <div>\n\n    </div>\n  );\n}\n`,
+  ts: `export {};\n`,
+  jsx: `import React from 'react';\n\nexport default function Component() {\n  return (\n    <div>\n\n    </div>\n  );\n}\n`,
+  js: `'use strict';\n`,
+  py: `def main():\n    pass\n\n\nif __name__ == '__main__':\n    main()\n`,
+  html: `<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n    <title>Document</title>\n  </head>\n  <body>\n\n  </body>\n</html>\n`,
+  css: `/* styles */\n`,
+  md: `# Title\n\n`,
+  json: `{\n}\n`,
+  yaml: ``,
+  yml: ``,
+  sh: `#!/usr/bin/env bash\nset -euo pipefail\n\n`,
+  rs: `fn main() {\n\n}\n`,
+  go: `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}\n`,
+  java: `public class Main {\n    public static void main(String[] args) {\n\n    }\n}\n`,
+  rb: `# frozen_string_literal: true\n\n`,
+  php: `<?php\n\n`,
+  swift: `import Foundation\n\n`,
+  kt: `fun main() {\n\n}\n`,
+};
+
+function getFileTemplate(filename: string): string {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return FILE_TEMPLATES[ext] ?? "";
+}
+
 const SIDEBAR_WIDTH_KEY = "peregrine:sidebar-width";
 const SIDEBAR_MIN = 140;
 const SIDEBAR_MAX = 480;
@@ -547,7 +575,7 @@ function IDECore({ projectId }: { projectId: string }) {
         setFiles(data);
         data.forEach((f) => { if (f.content !== null) savedContentRef.current.set(f.id, f.content); });
         const validIds = new Set(data.map((f) => f.id));
-        let saved: { activeFileId: string | null; openTabs: string[] } | null = null;
+        let saved: { activeFileId: string | null; openTabs: string[]; splitFileId?: string | null } | null = null;
         try {
           const raw = localStorage.getItem(getTabsKey(projectId));
           if (raw) saved = JSON.parse(raw);
@@ -564,6 +592,9 @@ function IDECore({ projectId }: { projectId: string }) {
           setActiveFileId(data[0].id);
           setOpenTabs([data[0].id]);
         }
+        if (saved?.splitFileId && validIds.has(saved.splitFileId)) {
+          setSplitFileId(saved.splitFileId);
+        }
       })
       .finally(() => setLoading(false));
   }, [projectId, router]);
@@ -573,10 +604,10 @@ function IDECore({ projectId }: { projectId: string }) {
     try {
       localStorage.setItem(
         getTabsKey(projectId),
-        JSON.stringify({ activeFileId, openTabs })
+        JSON.stringify({ activeFileId, openTabs, splitFileId })
       );
     } catch { /* ignore */ }
-  }, [openTabs, activeFileId, projectId, loading]);
+  }, [openTabs, activeFileId, splitFileId, projectId, loading]);
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}`)
@@ -893,15 +924,17 @@ function IDECore({ projectId }: { projectId: string }) {
     e.preventDefault();
     const trimmed = newFileName.trim();
     if (!trimmed) return;
+    const template = getFileTemplate(trimmed);
     const res = await fetch(`/api/projects/${projectId}/files`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: trimmed }),
+      body: JSON.stringify({ path: trimmed, content: template }),
     });
     if (res.ok) {
       const file: ProjectFile = await res.json();
-      if (file.content !== null) savedContentRef.current.set(file.id, file.content);
-      setFiles((prev) => [...prev, file]);
+      const content = template || (file.content ?? "");
+      savedContentRef.current.set(file.id, content);
+      setFiles((prev) => [...prev, { ...file, content }]);
       openFile(file.id);
       setNewFileName("");
       setShowNewFile(false);
