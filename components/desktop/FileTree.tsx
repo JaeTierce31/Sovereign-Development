@@ -53,6 +53,12 @@ export interface ProjectFile {
   updatedAt?: number | null;
 }
 
+type DragPayload =
+  | { type: "file"; fileId: string; filePath: string }
+  | { type: "folder"; folderPath: string };
+
+const DRAG_TYPE = "application/peregrine-drag";
+
 interface TreeNode {
   type: "file" | "folder";
   name: string;
@@ -136,6 +142,8 @@ interface FileTreeProps {
   onNewFileInFolder?: (folderPath: string) => void;
   onRenameFolder?: (folderPath: string) => void;
   onDeleteFolder?: (folderPath: string) => void;
+  onMoveFile?: (fileId: string, newPath: string) => void;
+  onMoveFolder?: (oldPath: string, newPath: string) => void;
   expandedFolders: Set<string>;
   onToggleFolder: (path: string) => void;
 }
@@ -163,6 +171,9 @@ function TreeNodeRow({
   onFolderContextMenu,
   focusedPath,
   onFocus,
+  dragOverFolder,
+  onDragOverFolder,
+  onDropOnFolder,
 }: FileTreeProps & {
   node: TreeNode;
   depth: number;
@@ -172,19 +183,38 @@ function TreeNodeRow({
   onFolderContextMenu: (e: React.MouseEvent, folderPath: string) => void;
   focusedPath: string | null;
   onFocus: (path: string) => void;
+  dragOverFolder: string | null;
+  onDragOverFolder: (path: string | null) => void;
+  onDropOnFolder: (folderPath: string, payload: DragPayload) => void;
 }) {
   const indent = depth * 12;
 
   if (node.type === "folder") {
     const open = expandedFolders.has(node.fullPath);
     const isFocused = focusedPath === node.fullPath;
+    const isDragTarget = dragOverFolder === node.fullPath;
     return (
       <>
         <button
           data-path={node.fullPath}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: "folder", folderPath: node.fullPath }));
+          }}
+          onDragEnd={() => onDragOverFolder(null)}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; onDragOverFolder(node.fullPath); }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) onDragOverFolder(null); }}
+          onDrop={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            onDragOverFolder(null);
+            const raw = e.dataTransfer.getData(DRAG_TYPE);
+            if (!raw) return;
+            try { onDropOnFolder(node.fullPath, JSON.parse(raw)); } catch {}
+          }}
           onClick={() => { toggleFolder(node.fullPath); onFocus(node.fullPath); }}
           onContextMenu={(e) => { e.preventDefault(); onFolderContextMenu(e, node.fullPath); }}
-          className={`w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors ${isFocused ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
+          className={`w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors ${isFocused ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""} ${isDragTarget ? "ring-1 ring-inset ring-blue-400 bg-blue-950/30" : ""}`}
           style={{ paddingLeft: `${8 + indent}px` }}
           tabIndex={-1}
         >
@@ -218,6 +248,9 @@ function TreeNodeRow({
             onFolderContextMenu={onFolderContextMenu}
             focusedPath={focusedPath}
             onFocus={onFocus}
+            dragOverFolder={dragOverFolder}
+            onDragOverFolder={onDragOverFolder}
+            onDropOnFolder={onDropOnFolder}
           />
         ))}
       </>
@@ -254,6 +287,12 @@ function TreeNodeRow({
   return (
     <div
       data-path={node.fullPath}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: "file", fileId: file.id, filePath: file.path }));
+      }}
+      onDragEnd={() => onDragOverFolder(null)}
       className={`group flex items-center ${isActive ? "bg-gray-700" : "hover:bg-gray-800"} ${isFocused && !isActive ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
       style={{ paddingLeft: `${8 + indent}px` }}
       onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file.id, file.path); }}
@@ -293,9 +332,26 @@ export default function FileTree(props: FileTreeProps) {
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
   const [copiedPath, setCopiedPath] = useState(false);
   const [copiedFolderPath, setCopiedFolderPath] = useState(false);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const folderMenuRef = useRef<HTMLDivElement>(null);
   const treeContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleDropOnFolder = useCallback((folderPath: string, payload: DragPayload) => {
+    if (payload.type === "file") {
+      const filename = payload.filePath.split("/").pop()!;
+      const newPath = `${folderPath}/${filename}`;
+      if (newPath === payload.filePath) return;
+      props.onMoveFile?.(payload.fileId, newPath);
+    } else {
+      const folderName = payload.folderPath.split("/").pop()!;
+      if (folderPath === payload.folderPath) return;
+      if (folderPath.startsWith(payload.folderPath + "/")) return;
+      const newPath = `${folderPath}/${folderName}`;
+      props.onMoveFolder?.(payload.folderPath, newPath);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.onMoveFile, props.onMoveFolder]);
 
   // Close context menus on outside click or Escape
   useEffect(() => {
@@ -426,6 +482,27 @@ export default function FileTree(props: FileTreeProps) {
       onKeyDown={handleKeyDown}
       onFocus={() => { if (!focusedPath && flat.length > 0) setFocusedPath(flat[0].fullPath); }}
       aria-label="File tree"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const raw = e.dataTransfer.getData(DRAG_TYPE);
+        if (!raw) return;
+        // Only handle drops that hit the root container (not a folder button)
+        if ((e.target as Element).closest("button[data-path]") || (e.target as Element).closest("[data-path]")?.querySelector("button")) return;
+        try {
+          const payload: DragPayload = JSON.parse(raw);
+          if (payload.type === "file") {
+            const filename = payload.filePath.split("/").pop()!;
+            if (filename === payload.filePath) return; // already at root
+            props.onMoveFile?.(payload.fileId, filename);
+          } else {
+            const folderName = payload.folderPath.split("/").pop()!;
+            if (folderName === payload.folderPath) return;
+            props.onMoveFolder?.(payload.folderPath, folderName);
+          }
+        } catch {}
+        setDragOverFolder(null);
+      }}
     >
       {tree.map((node) => (
         <TreeNodeRow
@@ -439,6 +516,9 @@ export default function FileTree(props: FileTreeProps) {
           onFolderContextMenu={handleFolderContextMenu}
           focusedPath={focusedPath}
           onFocus={setFocusedPath}
+          dragOverFolder={dragOverFolder}
+          onDragOverFolder={setDragOverFolder}
+          onDropOnFolder={handleDropOnFolder}
         />
       ))}
 

@@ -1153,6 +1153,36 @@ function IDECore({ projectId }: { projectId: string }) {
     setFiles((prev) => prev.filter((f) => !deletedIds.has(f.id)));
   }
 
+  const moveFile = useCallback(async (fileId: string, newPath: string) => {
+    const res = await fetch(`/api/projects/${projectId}/files/${fileId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: newPath }),
+    });
+    if (!res.ok) return;
+    setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, path: newPath } : f));
+  }, [projectId]);
+
+  const moveFolder = useCallback(async (oldPath: string, newPath: string) => {
+    const prefix = oldPath + "/";
+    const toMove = files.filter((f) => f.path === oldPath || f.path.startsWith(prefix));
+    await Promise.all(
+      toMove.map((f) => {
+        const newFilePath = f.path === oldPath ? newPath : newPath + f.path.slice(oldPath.length);
+        return fetch(`/api/projects/${projectId}/files/${f.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: newFilePath }),
+        });
+      })
+    );
+    setFiles((prev) => prev.map((f) => {
+      if (f.path === oldPath) return { ...f, path: newPath };
+      if (f.path.startsWith(prefix)) return { ...f, path: newPath + f.path.slice(oldPath.length) };
+      return f;
+    }));
+  }, [projectId, files]);
+
   const [renamingFolderPath, setRenamingFolderPath] = useState<string | null>(null);
   const [renameFolderVal, setRenameFolderVal] = useState("");
 
@@ -1512,6 +1542,8 @@ function IDECore({ projectId }: { projectId: string }) {
             onNewFileInFolder={newFileInFolder}
             onRenameFolder={startRenameFolder}
             onDeleteFolder={deleteFolder}
+            onMoveFile={moveFile}
+            onMoveFolder={moveFolder}
             expandedFolders={expandedFolders}
             onToggleFolder={toggleFolder}
           />
