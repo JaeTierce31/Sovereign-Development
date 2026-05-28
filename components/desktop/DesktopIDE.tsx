@@ -413,6 +413,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [gotoLineOpen, setGotoLineOpen] = useState(false);
   const [gotoLineVal, setGotoLineVal] = useState("");
   const gotoLineRef = useRef<HTMLInputElement>(null);
+  const scratchCounter = useRef(0);
   const dragTabIndex = useRef<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const tabStripRef = useRef<HTMLDivElement>(null);
@@ -485,7 +486,7 @@ function IDECore({ projectId }: { projectId: string }) {
   }, []);
 
   const saveAll = useCallback(async () => {
-    const dirty = [...dirtyTabs];
+    const dirty = [...dirtyTabs].filter((id) => !id.startsWith("scratch-"));
     if (dirty.length === 0) return;
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
     setSaveStatus("saving");
@@ -859,6 +860,7 @@ function IDECore({ projectId }: { projectId: string }) {
         setTermOpen((v) => !v);
       } else if (mod && e.key === "s") {
         e.preventDefault();
+        if (activeFileId?.startsWith("scratch-")) return;
         (async () => {
           // Format before save if enabled (Monaco handles js/ts/json/css/html natively)
           if (prefs.formatOnSave && editorInstanceRef.current) {
@@ -1085,6 +1087,7 @@ function IDECore({ projectId }: { projectId: string }) {
         prev.map((f) => (f.id === activeFileId ? { ...f, content: value } : f))
       );
       setDirtyTabs((prev) => { const next = new Set(prev); next.add(activeFileId); return next; });
+      if (activeFileId.startsWith("scratch-")) return;
       pendingSave.current = { id: activeFileId, value };
       if (saveTimer.current) clearTimeout(saveTimer.current);
       if (prefs.autoSave === "off") {
@@ -1154,8 +1157,29 @@ function IDECore({ projectId }: { projectId: string }) {
     }
   }
 
+  function createScratch() {
+    scratchCounter.current += 1;
+    const n = scratchCounter.current;
+    const id = `scratch-${n}`;
+    const file: ProjectFile = { id, path: `Untitled-${n}`, content: "", language: "plaintext", updatedAt: null };
+    setFiles((prev) => [...prev, file]);
+    openFile(id);
+  }
+
   async function deleteFile(fileId: string, e: React.MouseEvent) {
     e.stopPropagation();
+    if (fileId.startsWith("scratch-")) {
+      setOpenTabs((prev) => {
+        const next = prev.filter((t) => t !== fileId);
+        if (activeFileId === fileId) {
+          const idx = prev.indexOf(fileId);
+          setActiveFileId(next[idx] ?? next[idx - 1] ?? null);
+        }
+        return next;
+      });
+      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+      return;
+    }
     if (!confirm("Delete this file?")) return;
     await fetch(`/api/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
     setOpenTabs((prev) => {
@@ -1729,7 +1753,7 @@ function IDECore({ projectId }: { projectId: string }) {
               <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
             ) : (
               <FileTree
-                files={files}
+                files={files.filter((f) => !f.id.startsWith("scratch-"))}
                 activeFileId={activeFileId}
                 dirtyTabs={dirtyTabs}
                 renamingId={renamingId}
@@ -1904,7 +1928,9 @@ function IDECore({ projectId }: { projectId: string }) {
                   ) : dirtyTabs.has(tabId) ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
                   ) : null}
-                  <span className="truncate">{tabFile.path.split("/").pop()}</span>
+                  <span className={`truncate ${tabId.startsWith("scratch-") ? "italic text-gray-400" : ""}`}>
+                    {tabFile.path.split("/").pop()}
+                  </span>
                   {!isPinned && (
                     <button
                       onClick={(e) => closeTab(tabId, e)}
@@ -1925,6 +1951,9 @@ function IDECore({ projectId }: { projectId: string }) {
           <div className="flex items-center gap-1 min-w-0 overflow-hidden">
             {activeFile ? (
               <nav className="flex items-center gap-0.5 text-xs min-w-0 overflow-hidden" aria-label="File path">
+                {activeFileId?.startsWith("scratch-") && (
+                  <span className="text-[10px] text-gray-600 italic mr-1 shrink-0" title="Scratch buffer — not saved to server">scratch</span>
+                )}
                 {activeFile.path.split("/").map((segment, i, arr) => {
                   const isLast = i === arr.length - 1;
                   const folderPath = arr.slice(0, i + 1).join("/");
@@ -2794,6 +2823,7 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setCommandPaletteOpen(false)}
           commands={[
             { id: "new-file", label: "New File", description: "⌘/Ctrl N", icon: "+", action: () => setShowNewFile(true) },
+            { id: "new-scratch", label: "New Scratch Buffer", description: "Ephemeral — not saved to server", icon: "~", action: createScratch },
             { id: "save-all", label: "Save All", description: "⌘/Ctrl Shift S", icon: "↓", action: saveAll },
             { id: "global-search", label: "Search Across Files", description: "⌘/Ctrl Shift F", icon: "⌕", action: () => { setSidebarOpen(true); setSidebarTab("search"); } },
             { id: "toggle-terminal", label: "Toggle Terminal", description: "⌘/Ctrl `", icon: ">_", action: () => setTermOpen((v) => !v) },
