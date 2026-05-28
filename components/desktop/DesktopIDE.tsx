@@ -18,6 +18,7 @@ import ProjectSettingsPanel from "./ProjectSettingsPanel";
 import ProjectStatsPanel from "./ProjectStatsPanel";
 import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
 import OutlinePanel from "./OutlinePanel";
+import TodoPanel from "./TodoPanel";
 import { timeAgo } from "@/lib/timeAgo";
 
 interface EditorPrefs {
@@ -361,7 +362,8 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline">("explorer");
+  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline" | "todo">("explorer");
+  const pendingJumpRef = useRef<{ fileId: string; line: number } | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const isDraggingSidebar = useRef(false);
   const [termHeightPx, setTermHeightPx] = useState(TERM_HEIGHT_DEFAULT);
@@ -569,6 +571,18 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => { setDiffMode(false); }, [activeFileId]);
   useEffect(() => { activeFileIdRef.current = activeFileId; }, [activeFileId]);
   useEffect(() => { setProblems([]); }, [activeFileId]);
+
+  useEffect(() => {
+    const jump = pendingJumpRef.current;
+    if (!jump || jump.fileId !== activeFileId) return;
+    pendingJumpRef.current = null;
+    const t = setTimeout(() => {
+      type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+      const ed = editorInstanceRef.current as Ed | null;
+      if (ed) { ed.revealLineInCenter(jump.line); ed.setPosition({ lineNumber: jump.line, column: 1 }); ed.focus(); }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [activeFileId]);
 
   useEffect(() => {
     if (!activeFileId) return;
@@ -1558,6 +1572,17 @@ function IDECore({ projectId }: { projectId: string }) {
             </svg>
             Outline
           </button>
+          <button
+            onClick={() => setSidebarTab("todo")}
+            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "todo" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
+            title="TODO / FIXME comments across all files"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+              <path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" />
+            </svg>
+            TODO
+          </button>
         </div>
 
         {sidebarTab === "explorer" ? (
@@ -1735,7 +1760,7 @@ function IDECore({ projectId }: { projectId: string }) {
             }}
             inline
           />
-        ) : (
+        ) : sidebarTab === "outline" ? (
           <>
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 shrink-0">
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Outline</span>
@@ -1754,6 +1779,23 @@ function IDECore({ projectId }: { projectId: string }) {
               }}
             />
           </>
+        ) : (
+          <TodoPanel
+            files={files}
+            onSelect={(fileId, line) => {
+              if (fileId === activeFileId) {
+                if (!editorInstanceRef.current) return;
+                type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+                const ed = editorInstanceRef.current as Ed;
+                ed.revealLineInCenter(line);
+                ed.setPosition({ lineNumber: line, column: 1 });
+                ed.focus();
+              } else {
+                pendingJumpRef.current = { fileId, line };
+                openFile(fileId);
+              }
+            }}
+          />
         )}
         {/* Drag handle */}
         <div
