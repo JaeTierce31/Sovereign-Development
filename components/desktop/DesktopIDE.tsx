@@ -19,6 +19,7 @@ import ProjectStatsPanel from "./ProjectStatsPanel";
 import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
 import OutlinePanel from "./OutlinePanel";
 import TodoPanel from "./TodoPanel";
+import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
 import { timeAgo } from "@/lib/timeAgo";
 
 interface EditorPrefs {
@@ -362,8 +363,13 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline" | "todo">("explorer");
+  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline" | "todo" | "bookmarks">("explorer");
   const pendingJumpRef = useRef<{ fileId: string; line: number } | null>(null);
+  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
+    if (typeof window === "undefined") return [];
+    try { return JSON.parse(localStorage.getItem(`peregrine:bookmarks:${projectId}`) ?? "[]"); }
+    catch { return []; }
+  });
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
   const isDraggingSidebar = useRef(false);
   const [termHeightPx, setTermHeightPx] = useState(TERM_HEIGHT_DEFAULT);
@@ -609,6 +615,23 @@ function IDECore({ projectId }: { projectId: string }) {
       localStorage.setItem(`peregrine:expanded:${projectId}`, JSON.stringify([...expandedFolders]));
     } catch {}
   }, [expandedFolders, projectId]);
+
+  // Persist bookmarks to localStorage
+  useEffect(() => {
+    try { localStorage.setItem(`peregrine:bookmarks:${projectId}`, JSON.stringify(bookmarks)); } catch {}
+  }, [bookmarks, projectId]);
+
+  const toggleBookmark = useCallback(() => {
+    if (!activeFileId) return;
+    const line = cursorPos.line;
+    const file = filesRef.current.find((f) => f.id === activeFileId);
+    if (!file) return;
+    setBookmarks((prev) => {
+      const existing = prev.find((b) => b.fileId === activeFileId && b.line === line);
+      if (existing) return prev.filter((b) => b.id !== existing.id);
+      return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, fileId: activeFileId, filePath: file.path, line, label: "" }];
+    });
+  }, [activeFileId, cursorPos.line]);
 
   // Auto-expand parent folders when the active file changes
   const prevExpandActiveRef = useRef<string | null>(null);
@@ -933,6 +956,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "h" || e.key === "H")) {
         e.preventDefault();
         if (activeFileId) setHistoryOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        toggleBookmark();
       } else if (mod && e.shiftKey && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         setZenMode((on) => {
@@ -995,7 +1021,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -1540,49 +1566,26 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* Sidebar tab bar */}
+        {/* Sidebar tab bar — icon-only to fit 5 tabs */}
         <div className="flex border-b border-gray-700 shrink-0">
-          <button
-            onClick={() => setSidebarTab("explorer")}
-            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "explorer" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
-            title="Explorer (files)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
-            </svg>
-            Files
-          </button>
-          <button
-            onClick={() => setSidebarTab("search")}
-            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "search" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
-            title="Search across files (⌘/Ctrl Shift F)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.35-4.35" />
-            </svg>
-            Search
-          </button>
-          <button
-            onClick={() => setSidebarTab("outline")}
-            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "outline" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
-            title="Outline (symbols in current file)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path d="M4 6h16M4 12h10M4 18h7" strokeLinecap="round" />
-            </svg>
-            Outline
-          </button>
-          <button
-            onClick={() => setSidebarTab("todo")}
-            className={`flex-1 py-1.5 text-xs font-medium transition-colors flex items-center justify-center gap-1 ${sidebarTab === "todo" ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
-            title="TODO / FIXME comments across all files"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-              <path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" />
-            </svg>
-            TODO
-          </button>
+          {([
+            { id: "explorer", title: "Explorer — Files (⌘/Ctrl E)", icon: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /> },
+            { id: "search",   title: "Search across files (⌘/Ctrl Shift F)", icon: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.35-4.35" /></> },
+            { id: "outline",  title: "Outline — symbols in current file", icon: <path d="M4 6h16M4 12h10M4 18h7" strokeLinecap="round" /> },
+            { id: "todo",     title: "TODO / FIXME comments across all files", icon: <><path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" /></> },
+            { id: "bookmarks",title: "Bookmarks (⌘/Ctrl Shift B to add)", icon: <><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></> },
+          ] as const).map(({ id, title, icon }) => (
+            <button
+              key={id}
+              onClick={() => setSidebarTab(id)}
+              className={`flex-1 py-2 transition-colors flex items-center justify-center ${sidebarTab === id ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
+              title={title}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                {icon}
+              </svg>
+            </button>
+          ))}
         </div>
 
         {sidebarTab === "explorer" ? (
@@ -1779,7 +1782,7 @@ function IDECore({ projectId }: { projectId: string }) {
               }}
             />
           </>
-        ) : (
+        ) : sidebarTab === "todo" ? (
           <TodoPanel
             files={files}
             onSelect={(fileId, line) => {
@@ -1795,6 +1798,25 @@ function IDECore({ projectId }: { projectId: string }) {
                 openFile(fileId);
               }
             }}
+          />
+        ) : (
+          <BookmarkPanel
+            bookmarks={bookmarks}
+            onSelect={(fileId, line) => {
+              if (fileId === activeFileId) {
+                if (!editorInstanceRef.current) return;
+                type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+                const ed = editorInstanceRef.current as Ed;
+                ed.revealLineInCenter(line);
+                ed.setPosition({ lineNumber: line, column: 1 });
+                ed.focus();
+              } else {
+                pendingJumpRef.current = { fileId, line };
+                openFile(fileId);
+              }
+            }}
+            onRemove={(id) => setBookmarks((prev) => prev.filter((b) => b.id !== id))}
+            onLabelChange={(id, label) => setBookmarks((prev) => prev.map((b) => b.id === id ? { ...b, label } : b))}
           />
         )}
         {/* Drag handle */}
