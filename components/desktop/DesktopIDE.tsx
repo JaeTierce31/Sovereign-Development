@@ -470,6 +470,11 @@ function IDECore({ projectId }: { projectId: string }) {
     }
   });
 
+  const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false);
+  const [tabSwitcherIndex, setTabSwitcherIndex] = useState(0);
+  const [tabSwitcherList, setTabSwitcherList] = useState<string[]>([]);
+  const mruTabsRef = useRef<string[]>([]);
+
   const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try { return JSON.parse(localStorage.getItem(`peregrine:recent:${projectId}`) ?? "[]"); }
@@ -694,6 +699,50 @@ function IDECore({ projectId }: { projectId: string }) {
       return next;
     });
   }, [activeFileId, projectId]);
+
+  // Keep MRU order of open tabs (most recently focused first)
+  useEffect(() => {
+    if (!activeFileId) return;
+    mruTabsRef.current = [activeFileId, ...mruTabsRef.current.filter((x) => x !== activeFileId)];
+  }, [activeFileId]);
+
+  // Ctrl+Tab / Ctrl+Shift+Tab tab switcher keyboard handling
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!e.ctrlKey || e.metaKey || e.key !== "Tab") return;
+      e.preventDefault();
+      const validMru = mruTabsRef.current.filter((id) => openTabs.includes(id));
+      const remaining = openTabs.filter((id) => !validMru.includes(id));
+      const list = [...validMru, ...remaining];
+      if (list.length < 2) return;
+      if (!tabSwitcherOpen) {
+        const idx = e.shiftKey ? list.length - 1 : 1;
+        setTabSwitcherList(list);
+        setTabSwitcherIndex(idx);
+        setTabSwitcherOpen(true);
+      } else {
+        setTabSwitcherIndex((prev) =>
+          e.shiftKey
+            ? (prev - 1 + tabSwitcherList.length) % tabSwitcherList.length
+            : (prev + 1) % tabSwitcherList.length
+        );
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (!tabSwitcherOpen) return;
+      if (e.key === "Control") {
+        const id = tabSwitcherList[tabSwitcherIndex];
+        if (id) openFile(id);
+        setTabSwitcherOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+    };
+  }, [openTabs, tabSwitcherOpen, tabSwitcherIndex, tabSwitcherList, openFile]);
 
   const removeRecent = useCallback((id: string) => {
     const key = `peregrine:recent:${projectId}`;
@@ -1132,6 +1181,7 @@ function IDECore({ projectId }: { projectId: string }) {
         setGotoLineOpen(true);
         setGotoLineVal(String(cursorPos.line));
       } else if (e.key === "Escape") {
+        if (tabSwitcherOpen) { setTabSwitcherOpen(false); return; }
         if (tabContextMenu) { setTabContextMenu(null); return; }
         if (breadcrumbPopover) { setBreadcrumbPopover(null); return; }
         if (langPickerOpen) { setLangPickerOpen(false); return; }
@@ -1163,7 +1213,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3498,6 +3548,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
+                ["Ctrl Tab / Shift Tab", "MRU tab switcher"],
                 ["⌘/Ctrl Shift T", "Reopen closed tab"],
                 ["⌘/Ctrl Shift H", "Local history"],
                 ["⌘/Ctrl PageDown", "Next tab"],
@@ -3581,6 +3632,51 @@ function IDECore({ projectId }: { projectId: string }) {
           }}
         />
       )}
+      {tabSwitcherOpen && (() => {
+        const switcherFiles = tabSwitcherList.map((id) => files.find((f) => f.id === id)).filter(Boolean) as typeof files;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
+            onMouseDown={() => setTabSwitcherOpen(false)}
+          >
+            <div
+              className="bg-gray-900 border border-gray-600 rounded-xl shadow-2xl w-96 max-h-80 overflow-hidden flex flex-col"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-700/60 flex items-center gap-1.5">
+                <kbd className="px-1.5 py-0.5 bg-gray-800 border border-gray-600 rounded text-gray-400 font-mono text-[10px]">Ctrl+Tab</kbd>
+                <span>cycle · release Ctrl to confirm</span>
+              </div>
+              <div className="overflow-y-auto">
+                {switcherFiles.map((f, i) => {
+                  const parts = f.path.split("/");
+                  const name = parts.pop() ?? f.path;
+                  const dir = parts.join("/");
+                  return (
+                    <button
+                      key={f.id}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                        i === tabSwitcherIndex
+                          ? "bg-blue-600/20 border-l-2 border-blue-500"
+                          : "border-l-2 border-transparent hover:bg-gray-800"
+                      }`}
+                      onMouseDown={() => {
+                        openFile(f.id);
+                        setTabSwitcherOpen(false);
+                      }}
+                    >
+                      <FileIcon filename={f.path} className="w-4 h-4 flex-shrink-0 opacity-80" />
+                      <span className={`text-sm truncate ${i === tabSwitcherIndex ? "text-white" : "text-gray-300"}`}>{name}</span>
+                      {dir && <span className="text-xs text-gray-500 truncate ml-auto flex-shrink min-w-0">{dir}</span>}
+                      {dirtyTabs.has(f.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {breadcrumbPopover && (() => {
         const { folderPath, x, y } = breadcrumbPopover;
         const isFile = files.some((f) => f.path === folderPath);
