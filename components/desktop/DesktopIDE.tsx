@@ -20,6 +20,7 @@ import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
 import OutlinePanel from "./OutlinePanel";
 import TodoPanel from "./TodoPanel";
 import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
+import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
 interface EditorPrefs {
@@ -2033,6 +2034,7 @@ function IDECore({ projectId }: { projectId: string }) {
                   ) : dirtyTabs.has(tabId) ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
                   ) : null}
+                  <FileIcon filename={tabFile.path.split("/").pop() ?? tabFile.path} />
                   <span className={`truncate ${tabId.startsWith("scratch-") ? "italic text-gray-400" : ""}`}>
                     {tabFile.path.split("/").pop()}
                   </span>
