@@ -430,6 +430,13 @@ function IDECore({ projectId }: { projectId: string }) {
   const [breadcrumbPopover, setBreadcrumbPopover] = useState<{ folderPath: string; x: number; y: number } | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [zenMode, setZenMode] = useState(false);
+  const navBackStackRef = useRef<Array<{ fileId: string; line: number; col: number }>>([]);
+  const navForwardStackRef = useRef<Array<{ fileId: string; line: number; col: number }>>([]);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const isNavHistJumpingRef = useRef(false);
+  const prevFileIdForHistRef = useRef<string | null>(null);
+  const cursorPosRef = useRef({ line: 1, col: 1 });
   const preZenState = useRef<{ sidebar: boolean; term: boolean } | null>(null);
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [langFilter, setLangFilter] = useState("");
@@ -591,13 +598,74 @@ function IDECore({ projectId }: { projectId: string }) {
         if (jump.col !== undefined && jump.colEnd !== undefined) {
           ed.setSelection({ startLineNumber: jump.line, startColumn: jump.col, endLineNumber: jump.line, endColumn: jump.colEnd });
         } else {
-          ed.setPosition({ lineNumber: jump.line, column: 1 });
+          ed.setPosition({ lineNumber: jump.line, column: jump.col ?? 1 });
         }
         ed.focus();
       }
     }, 80);
     return () => clearTimeout(t);
   }, [activeFileId]);
+
+  // Keep cursorPosRef in sync for reading from callbacks without deps
+  useEffect(() => { cursorPosRef.current = cursorPos; }, [cursorPos]);
+
+  // Record navigation history when switching files
+  useEffect(() => {
+    const prevId = prevFileIdForHistRef.current;
+    prevFileIdForHistRef.current = activeFileId;
+    if (isNavHistJumpingRef.current) {
+      isNavHistJumpingRef.current = false;
+      return;
+    }
+    if (!prevId || prevId === activeFileId) return;
+    const pos = cursorPosRef.current;
+    navBackStackRef.current.push({ fileId: prevId, line: pos.line, col: pos.col });
+    navForwardStackRef.current = [];
+    setCanGoBack(true);
+    setCanGoForward(false);
+  }, [activeFileId]);
+
+  const goBackInHistory = useCallback(() => {
+    const backStack = navBackStackRef.current;
+    if (backStack.length === 0) return;
+    const target = backStack.pop()!;
+    const cur = cursorPosRef.current;
+    const curFileId = activeFileIdRef.current ?? "";
+    navForwardStackRef.current.push({ fileId: curFileId, line: cur.line, col: cur.col });
+    isNavHistJumpingRef.current = true;
+    setCanGoBack(backStack.length > 0);
+    setCanGoForward(true);
+    if (target.fileId === curFileId) {
+      type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+      const ed = editorInstanceRef.current as Ed | null;
+      if (ed) { ed.revealLineInCenter(target.line); ed.setPosition({ lineNumber: target.line, column: target.col }); ed.focus(); }
+      isNavHistJumpingRef.current = false;
+    } else {
+      pendingJumpRef.current = { fileId: target.fileId, line: target.line, col: target.col };
+      openFile(target.fileId);
+    }
+  }, [openFile]);
+
+  const goForwardInHistory = useCallback(() => {
+    const forwardStack = navForwardStackRef.current;
+    if (forwardStack.length === 0) return;
+    const target = forwardStack.pop()!;
+    const cur = cursorPosRef.current;
+    const curFileId = activeFileIdRef.current ?? "";
+    navBackStackRef.current.push({ fileId: curFileId, line: cur.line, col: cur.col });
+    isNavHistJumpingRef.current = true;
+    setCanGoBack(true);
+    setCanGoForward(forwardStack.length > 0);
+    if (target.fileId === curFileId) {
+      type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+      const ed = editorInstanceRef.current as Ed | null;
+      if (ed) { ed.revealLineInCenter(target.line); ed.setPosition({ lineNumber: target.line, column: target.col }); ed.focus(); }
+      isNavHistJumpingRef.current = false;
+    } else {
+      pendingJumpRef.current = { fileId: target.fileId, line: target.line, col: target.col };
+      openFile(target.fileId);
+    }
+  }, [openFile]);
 
   useEffect(() => {
     if (!activeFileId) return;
@@ -1974,6 +2042,27 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700 text-sm text-gray-300 shrink-0">
           <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+            {/* Navigation history back/forward */}
+            <button
+              onClick={goBackInHistory}
+              disabled={!canGoBack}
+              className={`shrink-0 p-0.5 rounded transition-colors ${canGoBack ? "text-gray-400 hover:text-white hover:bg-gray-700/60" : "text-gray-700 cursor-default"}`}
+              title="Go back to previous location"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+            <button
+              onClick={goForwardInHistory}
+              disabled={!canGoForward}
+              className={`shrink-0 p-0.5 rounded transition-colors mr-1 ${canGoForward ? "text-gray-400 hover:text-white hover:bg-gray-700/60" : "text-gray-700 cursor-default"}`}
+              title="Go forward to next location"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
             {activeFile ? (
               <nav className="flex items-center gap-0.5 text-xs min-w-0 overflow-hidden" aria-label="File path">
                 {activeFileId?.startsWith("scratch-") && (
@@ -2847,6 +2936,8 @@ function IDECore({ projectId }: { projectId: string }) {
           onOpenFile={(id) => { openFile(id); setCommandPaletteOpen(false); }}
           onClose={() => setCommandPaletteOpen(false)}
           commands={[
+            { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
+            { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
             { id: "new-file", label: "New File", description: "⌘/Ctrl N", icon: "+", action: () => setShowNewFile(true) },
             { id: "new-scratch", label: "New Scratch Buffer", description: "Ephemeral — not saved to server", icon: "~", action: createScratch },
             { id: "save-all", label: "Save All", description: "⌘/Ctrl Shift S", icon: "↓", action: saveAll },
