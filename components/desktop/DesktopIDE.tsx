@@ -539,6 +539,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const activeFileIdRef = useRef<string | null>(null);
   const [problems, setProblems] = useState<Problem[]>([]);
   const [problemsOpen, setProblemsOpen] = useState(false);
+  const [fileProblems, setFileProblems] = useState<Record<string, { errors: number; warnings: number }>>({});
   const monacoRef = useRef<unknown>(null);
   const markerListenerRef = useRef<{ dispose: () => void } | null>(null);
   const [isPublic, setIsPublic] = useState(false);
@@ -692,6 +693,7 @@ function IDECore({ projectId }: { projectId: string }) {
     if (pinnedTabs.has(id)) return;
     closedTabHistory.current = [id, ...closedTabHistory.current].slice(0, 10);
     setDirtyTabs((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    setFileProblems((prev) => { const next = { ...prev }; delete next[id]; return next; });
     setOpenTabs((prev) => {
       const next = prev.filter((t) => t !== id);
       if (activeFileId === id) {
@@ -2372,6 +2374,17 @@ function IDECore({ projectId }: { projectId: string }) {
                   <span className={`truncate ${tabId.startsWith("scratch-") ? "italic text-gray-400" : ""}`}>
                     {tabId.startsWith("scratch-") ? tabBasename : tabLabel}
                   </span>
+                  {fileProblems[tabId]?.errors > 0 ? (
+                    <span
+                      className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"
+                      title={`${fileProblems[tabId].errors} error${fileProblems[tabId].errors !== 1 ? "s" : ""}`}
+                    />
+                  ) : fileProblems[tabId]?.warnings > 0 ? (
+                    <span
+                      className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0"
+                      title={`${fileProblems[tabId].warnings} warning${fileProblems[tabId].warnings !== 1 ? "s" : ""}`}
+                    />
+                  ) : null}
                   {!isPinned && (
                     <button
                       onClick={(e) => closeTab(tabId, e)}
@@ -2670,9 +2683,16 @@ function IDECore({ projectId }: { projectId: string }) {
                           {
                             const model = editor.getModel();
                             if (model) {
+                              const thisFileId = activeFile.id;
                               type Mn = { editor: { getModelMarkers: (o: { resource: unknown }) => Problem[]; onDidChangeMarkers: (cb: (uris: unknown[]) => void) => { dispose: () => void } } };
                               const mn = monaco as Mn;
-                              const refresh = () => setProblems(mn.editor.getModelMarkers({ resource: model.uri }));
+                              const refresh = () => {
+                                const markers = mn.editor.getModelMarkers({ resource: model.uri });
+                                setProblems(markers);
+                                const errors = markers.filter((m) => m.severity === 8).length;
+                                const warnings = markers.filter((m) => m.severity === 4).length;
+                                setFileProblems((prev) => ({ ...prev, [thisFileId]: { errors, warnings } }));
+                              };
                               refresh();
                               markerListenerRef.current = mn.editor.onDidChangeMarkers((uris) => {
                                 if (uris.some((u) => (u as { toString(): string }).toString() === model.uri.toString())) refresh();
