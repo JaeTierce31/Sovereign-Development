@@ -25,7 +25,46 @@ interface TreeNode {
   children: TreeNode[];
 }
 
-function buildTree(files: ProjectFile[]): TreeNode[] {
+function getStem(filename: string): string {
+  if (filename.startsWith(".")) {
+    const second = filename.indexOf(".", 1);
+    return second === -1 ? filename : filename.slice(0, second);
+  }
+  const first = filename.indexOf(".");
+  return first === -1 ? filename : filename.slice(0, first);
+}
+
+function applyNesting(nodes: TreeNode[]): void {
+  for (const node of nodes) {
+    if (node.type !== "folder") continue;
+    applyNesting(node.children);
+    const fileKids = node.children.filter((n) => n.type === "file");
+    const stemMap = new Map<string, TreeNode[]>();
+    for (const kid of fileKids) {
+      const s = getStem(kid.name);
+      const arr = stemMap.get(s) ?? [];
+      arr.push(kid);
+      stemMap.set(s, arr);
+    }
+    for (const [, group] of stemMap) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => {
+        const da = (a.name.match(/\./g) ?? []).length;
+        const db = (b.name.match(/\./g) ?? []).length;
+        if (da !== db) return da - db;
+        return a.name.localeCompare(b.name);
+      });
+      const primary = group[0];
+      for (const nested of group.slice(1)) {
+        primary.children.push(nested);
+        const idx = node.children.indexOf(nested);
+        if (idx !== -1) node.children.splice(idx, 1);
+      }
+    }
+  }
+}
+
+function buildTree(files: ProjectFile[], nestingEnabled = false): TreeNode[] {
   const root: TreeNode[] = [];
 
   function insert(nodes: TreeNode[], parts: string[], depth: number, file: ProjectFile) {
@@ -73,6 +112,7 @@ function buildTree(files: ProjectFile[]): TreeNode[] {
     for (const n of nodes) sortNodes(n.children);
   }
   sortNodes(root);
+  if (nestingEnabled) applyNesting(root);
   return root;
 }
 
@@ -82,6 +122,10 @@ function flattenVisible(nodes: TreeNode[], expandedFolders: Set<string>): TreeNo
     result.push(node);
     if (node.type === "folder" && expandedFolders.has(node.fullPath)) {
       result.push(...flattenVisible(node.children, expandedFolders));
+    }
+    // File nesting: nested sibling files are always visible when their parent is
+    if (node.type === "file" && node.children.length > 0) {
+      result.push(...node.children);
     }
   }
   return result;
@@ -125,6 +169,7 @@ interface FileTreeProps {
   onToggleFolder: (path: string) => void;
   revealFileId?: string | null;
   revealSeq?: number;
+  nestingEnabled?: boolean;
 }
 
 function TreeNodeRow({
@@ -153,6 +198,7 @@ function TreeNodeRow({
   dragOverFolder,
   onDragOverFolder,
   onDropOnFolder,
+  isNestedChild,
 }: FileTreeProps & {
   node: TreeNode;
   depth: number;
@@ -165,6 +211,7 @@ function TreeNodeRow({
   dragOverFolder: string | null;
   onDragOverFolder: (path: string | null) => void;
   onDropOnFolder: (folderPath: string, payload: DragPayload) => void;
+  isNestedChild?: boolean;
 }) {
   const indent = depth * 12;
 
@@ -264,6 +311,7 @@ function TreeNodeRow({
   }
 
   return (
+    <>
     <div
       data-path={node.fullPath}
       draggable
@@ -288,6 +336,7 @@ function TreeNodeRow({
         title={file.updatedAt ? `${file.path}\nModified ${timeAgo(file.updatedAt)}` : file.path}
         tabIndex={-1}
       >
+        {isNestedChild && <span className="text-gray-600 mr-0.5 shrink-0">↳</span>}
         <FileIcon filename={node.name} />
         <span className="truncate">{node.name}</span>
       </button>
@@ -300,12 +349,45 @@ function TreeNodeRow({
         ×
       </button>
     </div>
+    {node.children.map((nested) => (
+      <TreeNodeRow
+        key={nested.fullPath}
+        node={nested}
+        depth={depth + 1}
+        isNestedChild
+        files={[]}
+        activeFileId={activeFileId}
+        dirtyTabs={dirtyTabs}
+        renamingId={renamingId}
+        renameVal={renameVal}
+        renameInputRef={renameInputRef}
+        onOpenFile={onOpenFile}
+        onStartRename={onStartRename}
+        onRenameChange={onRenameChange}
+        onCommitRename={onCommitRename}
+        onDeleteFile={onDeleteFile}
+        onNewFileInFolder={onNewFileInFolder}
+        onRenameFolder={onRenameFolder}
+        onDeleteFolder={onDeleteFolder}
+        expandedFolders={expandedFolders}
+        onToggleFolder={onToggleFolder}
+        toggleFolder={toggleFolder}
+        onContextMenu={onContextMenu}
+        onFolderContextMenu={onFolderContextMenu}
+        focusedPath={focusedPath}
+        onFocus={onFocus}
+        dragOverFolder={dragOverFolder}
+        onDragOverFolder={onDragOverFolder}
+        onDropOnFolder={onDropOnFolder}
+      />
+    ))}
+    </>
   );
 }
 
 export default function FileTree(props: FileTreeProps) {
   const { files, expandedFolders, onToggleFolder } = props;
-  const tree = buildTree(files);
+  const tree = buildTree(files, props.nestingEnabled);
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);

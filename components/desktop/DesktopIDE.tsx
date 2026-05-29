@@ -409,6 +409,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const [newFolderParent, setNewFolderParent] = useState("");
   const [treeFilterOpen, setTreeFilterOpen] = useState(false);
   const [treeFilter, setTreeFilter] = useState("");
+  const [nestingEnabled, setNestingEnabled] = useState(() => {
+    try { return localStorage.getItem("peregrine:file-nesting") === "1"; } catch { return false; }
+  });
   const treeFilterRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
@@ -1746,6 +1749,17 @@ function IDECore({ projectId }: { projectId: string }) {
                   ⌕
                 </button>
                 <button
+                  onClick={() => setNestingEnabled((v) => {
+                    const next = !v;
+                    try { localStorage.setItem("peregrine:file-nesting", next ? "1" : "0"); } catch { /* ignore */ }
+                    return next;
+                  })}
+                  className={`transition-colors leading-none text-[11px] ${nestingEnabled ? "text-blue-400 hover:text-blue-300" : "text-gray-500 hover:text-gray-300"}`}
+                  title={nestingEnabled ? "File nesting: on (click to disable)" : "File nesting: off (click to enable)"}
+                >
+                  ⇉
+                </button>
+                <button
                   onClick={() => {
                     const all = new Set<string>();
                     for (const f of files) {
@@ -1923,6 +1937,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 onToggleFolder={toggleFolder}
                 revealFileId={activeFileId}
                 revealSeq={revealSeq}
+                nestingEnabled={nestingEnabled}
               />
             )}
           </>
