@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useMemo, useRef, useEffect } from "react";
 
 interface OutlineSymbol {
   name: string;
@@ -104,15 +104,38 @@ export default function OutlinePanel({
   content,
   language,
   onGoToLine,
+  activeLine,
 }: {
   content: string | null;
   language: string | null;
   onGoToLine: (line: number) => void;
+  activeLine?: number;
 }) {
   const symbols = useMemo(
     () => (content ? parseSymbols(content, language) : []),
     [content, language]
   );
+
+  // Index of the symbol that contains the cursor (last symbol whose line ≤ activeLine)
+  const activeIdx = useMemo(() => {
+    if (activeLine === undefined || symbols.length === 0) return -1;
+    let best = -1;
+    for (let i = 0; i < symbols.length; i++) {
+      if (symbols[i].line <= activeLine) best = i;
+    }
+    return best;
+  }, [symbols, activeLine]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeRowRef = useRef<HTMLButtonElement>(null);
+
+  // Scroll active symbol into view when it changes, but only if the panel is not
+  // being hovered (so manual scrolling isn't yanked away).
+  const hoveringRef = useRef(false);
+  useEffect(() => {
+    if (activeIdx === -1 || hoveringRef.current) return;
+    activeRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx]);
 
   if (!content) {
     return (
@@ -133,22 +156,37 @@ export default function OutlinePanel({
   }
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-auto"
+      onMouseEnter={() => { hoveringRef.current = true; }}
+      onMouseLeave={() => { hoveringRef.current = false; }}
+    >
       {symbols.map((sym, i) => {
         const { icon, color } = KIND_ICON[sym.kind];
+        const isActive = i === activeIdx;
         return (
           <button
             key={i}
+            ref={isActive ? activeRowRef : undefined}
             onClick={() => onGoToLine(sym.line)}
             title={`${sym.kind} · line ${sym.line}`}
-            className="w-full text-left px-2 py-1 hover:bg-gray-800 transition-colors flex items-center gap-1.5 group"
+            className={`w-full text-left px-2 py-1 transition-colors flex items-center gap-1.5 group ${
+              isActive
+                ? "bg-blue-600/20 text-white"
+                : "hover:bg-gray-800"
+            }`}
             style={{ paddingLeft: `${8 + sym.indent}px` }}
           >
             <span className={`text-[10px] font-bold w-4 shrink-0 text-right leading-none ${color}`} aria-hidden>
               {icon}
             </span>
-            <span className="text-xs text-gray-300 truncate group-hover:text-white">{sym.name}</span>
-            <span className="text-[10px] text-gray-600 ml-auto shrink-0 tabular-nums">{sym.line}</span>
+            <span className={`text-xs truncate group-hover:text-white ${isActive ? "text-white font-medium" : "text-gray-300"}`}>
+              {sym.name}
+            </span>
+            <span className={`text-[10px] ml-auto shrink-0 tabular-nums ${isActive ? "text-blue-300" : "text-gray-600"}`}>
+              {sym.line}
+            </span>
           </button>
         );
       })}

@@ -1902,6 +1902,7 @@ function IDECore({ projectId }: { projectId: string }) {
             <OutlinePanel
               content={activeFile?.content ?? null}
               language={activeFile?.language ?? null}
+              activeLine={cursorPos.line}
               onGoToLine={(line) => {
                 if (!editorInstanceRef.current) return;
                 type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
