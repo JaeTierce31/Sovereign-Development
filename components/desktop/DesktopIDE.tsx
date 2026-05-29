@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import JSZip from "jszip";
 import { useRouter } from "next/navigation";
@@ -45,6 +45,10 @@ interface EditorPrefs {
   fontLigatures: boolean;
   autoSave: "off" | "afterDelay";
   autoSaveDelay: 500 | 1000 | 2000 | 5000;
+  indentGuides: boolean;
+  colorDecorators: boolean;
+  smoothScrolling: boolean;
+  cursorBlinking: "blink" | "smooth" | "phase" | "expand" | "solid";
 }
 
 interface Problem {
@@ -56,7 +60,7 @@ interface Problem {
 }
 
 const PREFS_KEY = "peregrine:editor-prefs";
-const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on", bracketPairColorization: true, quickSuggestions: true, autoClosingBrackets: "languageDefined", fontLigatures: true, autoSave: "afterDelay", autoSaveDelay: 1000 };
+const DEFAULT_PREFS: EditorPrefs = { fontSize: 14, tabSize: 2, wordWrap: "on", minimap: true, theme: "vs-dark", stickyScroll: true, ruler: null, keymap: "default", formatOnSave: false, insertSpaces: true, detectIndentation: true, fontFamily: "default", renderWhitespace: "none", cursorStyle: "line", lineNumbers: "on", bracketPairColorization: true, quickSuggestions: true, autoClosingBrackets: "languageDefined", fontLigatures: true, autoSave: "afterDelay", autoSaveDelay: 1000, indentGuides: true, colorDecorators: true, smoothScrolling: false, cursorBlinking: "blink" };
 
 const FONT_URLS: Record<string, string> = {
   "JetBrains Mono": "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap",
@@ -927,6 +931,18 @@ function IDECore({ projectId }: { projectId: string }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeFilter]);
 
+  const todoCount = useMemo(() => {
+    const TODO_RE = /\b(TODO|FIXME|HACK|NOTE|XXX)\b/i;
+    let count = 0;
+    for (const f of files) {
+      if (!f.content) continue;
+      for (const line of f.content.split("\n")) {
+        if (TODO_RE.test(line)) count++;
+      }
+    }
+    return count;
+  }, [files]);
+
   useEffect(() => { setSelectionStats(null); }, [activeFileId]);
 
   // Scroll active tab into view and update overflow indicators
@@ -1717,21 +1733,26 @@ function IDECore({ projectId }: { projectId: string }) {
         {/* Sidebar tab bar — icon-only to fit 5 tabs */}
         <div className="flex border-b border-gray-700 shrink-0">
           {([
-            { id: "explorer", title: "Explorer — Files (⌘/Ctrl E)", icon: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /> },
-            { id: "search",   title: "Search across files (⌘/Ctrl Shift F)", icon: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.35-4.35" /></> },
-            { id: "outline",  title: "Outline — symbols in current file", icon: <path d="M4 6h16M4 12h10M4 18h7" strokeLinecap="round" /> },
-            { id: "todo",     title: "TODO / FIXME comments across all files", icon: <><path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" /></> },
-            { id: "bookmarks",title: "Bookmarks (⌘/Ctrl Shift B to add)", icon: <><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></> },
-          ] as const).map(({ id, title, icon }) => (
+            { id: "explorer", title: "Explorer — Files (⌘/Ctrl E)", icon: <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />, badge: 0 },
+            { id: "search",   title: "Search across files (⌘/Ctrl Shift F)", icon: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.35-4.35" /></>, badge: 0 },
+            { id: "outline",  title: "Outline — symbols in current file", icon: <path d="M4 6h16M4 12h10M4 18h7" strokeLinecap="round" />, badge: 0 },
+            { id: "todo",     title: "TODO / FIXME comments across all files", icon: <><path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" /></>, badge: todoCount },
+            { id: "bookmarks",title: "Bookmarks (⌘/Ctrl Shift B to add)", icon: <><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></>, badge: bookmarks.length },
+          ] as const).map(({ id, title, icon, badge }) => (
             <button
               key={id}
               onClick={() => setSidebarTab(id)}
-              className={`flex-1 py-2 transition-colors flex items-center justify-center ${sidebarTab === id ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
+              className={`flex-1 py-2 transition-colors flex items-center justify-center relative ${sidebarTab === id ? "text-white border-b-2 border-blue-500 -mb-px" : "text-gray-500 hover:text-gray-300"}`}
               title={title}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
                 {icon}
               </svg>
+              {badge > 0 && (
+                <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -2454,19 +2475,22 @@ function IDECore({ projectId }: { projectId: string }) {
                           stickyScroll: { enabled: prefs.stickyScroll },
                           rulers: prefs.ruler ? [prefs.ruler] : [],
                           scrollBeyondLastLine: false,
-                          smoothScrolling: true,
-                          cursorSmoothCaretAnimation: "on",
+                          smoothScrolling: prefs.smoothScrolling,
+                          cursorSmoothCaretAnimation: prefs.smoothScrolling ? "on" : "off",
                           renderLineHighlight: "all",
                           padding: { top: 8, bottom: 8 },
                           fontFamily: FONT_OPTIONS.find((f) => f.value === prefs.fontFamily)?.stack || undefined,
                           fontLigatures: prefs.fontLigatures && prefs.fontFamily !== "default" && prefs.fontFamily !== "system",
                           renderWhitespace: prefs.renderWhitespace,
                           cursorStyle: prefs.cursorStyle,
+                          cursorBlinking: prefs.cursorBlinking,
                           lineNumbers: prefs.lineNumbers,
                           bracketPairColorization: { enabled: prefs.bracketPairColorization },
                           quickSuggestions: prefs.quickSuggestions,
                           autoClosingBrackets: prefs.autoClosingBrackets,
                           autoClosingQuotes: prefs.autoClosingBrackets === "never" ? "never" : "languageDefined",
+                          colorDecorators: prefs.colorDecorators,
+                          guides: { indentation: prefs.indentGuides, bracketPairs: false },
                         }}
                       />
                     )
@@ -2551,14 +2575,17 @@ function IDECore({ projectId }: { projectId: string }) {
                               stickyScroll: { enabled: prefs.stickyScroll },
                               rulers: prefs.ruler ? [prefs.ruler] : [],
                               scrollBeyondLastLine: false,
-                              smoothScrolling: true,
-                              cursorSmoothCaretAnimation: "on",
+                              smoothScrolling: prefs.smoothScrolling,
+                              cursorSmoothCaretAnimation: prefs.smoothScrolling ? "on" : "off",
                               renderLineHighlight: "all",
                               padding: { top: 8, bottom: 8 },
                               bracketPairColorization: { enabled: prefs.bracketPairColorization },
                               quickSuggestions: prefs.quickSuggestions,
                               autoClosingBrackets: prefs.autoClosingBrackets,
                               autoClosingQuotes: prefs.autoClosingBrackets === "never" ? "never" : "languageDefined",
+                              colorDecorators: prefs.colorDecorators,
+                              cursorBlinking: prefs.cursorBlinking,
+                              guides: { indentation: prefs.indentGuides, bracketPairs: false },
                             }}
                           />
                         )
@@ -2931,7 +2958,9 @@ function IDECore({ projectId }: { projectId: string }) {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                const lineNum = parseInt(gotoLineVal, 10);
+                const parts = gotoLineVal.split(":");
+                const lineNum = parseInt(parts[0], 10);
+                const colNum = parts[1] ? parseInt(parts[1], 10) : 1;
                 const ed = editorInstanceRef.current as {
                   revealLineInCenter?: (n: number) => void;
                   setPosition?: (p: { lineNumber: number; column: number }) => void;
@@ -2942,7 +2971,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 const total = ed.getModel?.()?.getLineCount() ?? 1;
                 const clamped = Math.max(1, Math.min(total, lineNum));
                 ed.revealLineInCenter?.(clamped);
-                ed.setPosition?.({ lineNumber: clamped, column: 1 });
+                ed.setPosition?.({ lineNumber: clamped, column: Math.max(1, isNaN(colNum) ? 1 : colNum) });
                 ed.focus?.();
                 setGotoLineOpen(false);
               }}
@@ -2954,10 +2983,10 @@ function IDECore({ projectId }: { projectId: string }) {
                 value={gotoLineVal}
                 onChange={(e) => setGotoLineVal(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Escape") setGotoLineOpen(false); }}
-                type="number"
-                min={1}
+                type="text"
+                inputMode="numeric"
                 className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 focus:border-blue-500 rounded text-white text-sm focus:outline-none w-0"
-                placeholder="line number"
+                placeholder="line or line:col"
               />
               <button
                 type="submit"
@@ -3396,6 +3425,49 @@ function IDECore({ projectId }: { projectId: string }) {
                 >
                   <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.fontLigatures ? "translate-x-4" : "translate-x-0.5"}`} />
                 </button>
+              </div>
+              {/* Indent guides */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Indent guides</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, indentGuides: !p.indentGuides }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.indentGuides ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.indentGuides ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Color decorators */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Color swatches</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, colorDecorators: !p.colorDecorators }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.colorDecorators ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.colorDecorators ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Smooth scrolling */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Smooth scroll</label>
+                <button
+                  onClick={() => setPrefs((p) => ({ ...p, smoothScrolling: !p.smoothScrolling }))}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${prefs.smoothScrolling ? "bg-blue-600" : "bg-gray-700"}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${prefs.smoothScrolling ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+              {/* Cursor blinking */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-gray-400">Cursor blink</label>
+                <select
+                  value={prefs.cursorBlinking}
+                  onChange={(e) => setPrefs((p) => ({ ...p, cursorBlinking: e.target.value as EditorPrefs["cursorBlinking"] }))}
+                  className="text-xs bg-gray-800 border border-gray-700 text-white rounded px-2 py-1 focus:outline-none focus:border-blue-500"
+                >
+                  {(["blink", "smooth", "phase", "expand", "solid"] as const).map((v) => (
+                    <option key={v} value={v}>{v.charAt(0).toUpperCase() + v.slice(1)}</option>
+                  ))}
+                </select>
               </div>
               {/* Reset */}
               <button
