@@ -17,7 +17,7 @@ import InlineAiCommand from "./InlineAiCommand";
 import ProjectSettingsPanel from "./ProjectSettingsPanel";
 import ProjectStatsPanel from "./ProjectStatsPanel";
 import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
-import OutlinePanel from "./OutlinePanel";
+import OutlinePanel, { parseSymbols } from "./OutlinePanel";
 import TodoPanel from "./TodoPanel";
 import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
 import FileIcon from "./FileIcon";
@@ -2963,6 +2963,16 @@ function IDECore({ projectId }: { projectId: string }) {
           files={files}
           onOpenFile={(id) => { openFile(id); setCommandPaletteOpen(false); }}
           onClose={() => setCommandPaletteOpen(false)}
+          activeFileSymbols={activeFile?.content ? parseSymbols(activeFile.content, activeFile.language ?? null) : []}
+          onGoToLine={(line) => {
+            if (!editorInstanceRef.current) return;
+            type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+            const ed = editorInstanceRef.current as Ed;
+            ed.revealLineInCenter(line);
+            ed.setPosition({ lineNumber: line, column: 1 });
+            ed.focus();
+            setCommandPaletteOpen(false);
+          }}
           commands={[
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },

@@ -1,6 +1,20 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { ProjectFile } from "@/components/desktop/FileTree";
+import type { OutlineSymbol } from "./OutlinePanel";
+
+const KIND_BADGE: Record<OutlineSymbol["kind"], { label: string; className: string }> = {
+  class:     { label: "C", className: "text-orange-400" },
+  function:  { label: "ƒ", className: "text-blue-400" },
+  method:    { label: "m", className: "text-blue-300" },
+  variable:  { label: "v", className: "text-gray-400" },
+  interface: { label: "I", className: "text-purple-400" },
+  type:      { label: "T", className: "text-purple-300" },
+  enum:      { label: "E", className: "text-yellow-400" },
+  module:    { label: "M", className: "text-green-400" },
+  constant:  { label: "K", className: "text-teal-400" },
+  property:  { label: "p", className: "text-gray-300" },
+};
 
 interface Command {
   id: string;
@@ -15,6 +29,8 @@ interface CommandPaletteProps {
   onOpenFile: (id: string) => void;
   onClose: () => void;
   commands?: Command[];
+  activeFileSymbols?: OutlineSymbol[];
+  onGoToLine?: (line: number) => void;
 }
 
 function fuzzyScore(query: string, target: string): number {
@@ -68,9 +84,10 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 
 type ResultItem =
   | { kind: "file"; file: ProjectFile; score: number }
-  | { kind: "command"; command: Command; score: number };
+  | { kind: "command"; command: Command; score: number }
+  | { kind: "symbol"; symbol: OutlineSymbol; score: number };
 
-export default function CommandPalette({ files, onOpenFile, onClose, commands = [] }: CommandPaletteProps) {
+export default function CommandPalette({ files, onOpenFile, onClose, commands = [], activeFileSymbols = [], onGoToLine }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
@@ -81,9 +98,21 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
   }, []);
 
   const isCommand = query.startsWith(">");
-  const searchQuery = isCommand ? query.slice(1).trimStart() : query;
+  const isSymbol = query.startsWith("@");
+  const searchQuery = isCommand ? query.slice(1).trimStart() : isSymbol ? query.slice(1) : query;
 
   const results: ResultItem[] = (() => {
+    if (isSymbol) {
+      const q = searchQuery.toLowerCase().trim();
+      return activeFileSymbols
+        .map((sym) => {
+          const score = q ? fuzzyScore(q, sym.name) : 1;
+          return { kind: "symbol" as const, symbol: sym, score };
+        })
+        .filter((r) => r.score > 0)
+        .sort((a, b) => (b.symbol.line - a.symbol.line === 0 ? b.score - a.score : b.score - a.score));
+    }
+
     if (isCommand) {
       return commands
         .map((c) => {
@@ -133,11 +162,13 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
     if (!item) return;
     if (item.kind === "file") {
       onOpenFile(item.file.id);
+    } else if (item.kind === "symbol") {
+      onGoToLine?.(item.symbol.line);
     } else {
       item.command.action();
     }
     onClose();
-  }, [results, onOpenFile, onClose]);
+  }, [results, onOpenFile, onClose, onGoToLine]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     switch (e.key) {
@@ -172,6 +203,8 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
           {isCommand ? (
             <span className="text-blue-400 text-sm shrink-0 font-mono">&gt;</span>
+          ) : isSymbol ? (
+            <span className="text-purple-400 text-sm shrink-0 font-mono">@</span>
           ) : (
             <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -182,7 +215,7 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isCommand ? "Type a command…" : "Go to file… (type > for commands)"}
+            placeholder={isCommand ? "Type a command…" : isSymbol ? "Go to symbol in file…" : "Go to file… (> commands, @ symbols)"}
             className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none"
           />
           {query && (
@@ -200,7 +233,7 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
           {results.length === 0 && (
             <div className="px-4 py-8 text-center text-gray-600 text-sm">No results</div>
           )}
-          {!isCommand && !query && results.length > 0 && (
+          {!isCommand && !isSymbol && !query && results.length > 0 && (
             <div className="px-3 py-1.5 text-[10px] text-gray-600 uppercase tracking-wider border-b border-gray-800">
               Recent files
             </div>
@@ -208,6 +241,11 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
           {isCommand && !searchQuery && results.length > 0 && (
             <div className="px-3 py-1.5 text-[10px] text-gray-600 uppercase tracking-wider border-b border-gray-800">
               Commands
+            </div>
+          )}
+          {isSymbol && !searchQuery && results.length > 0 && (
+            <div className="px-3 py-1.5 text-[10px] text-gray-600 uppercase tracking-wider border-b border-gray-800">
+              Symbols in file
             </div>
           )}
           {results.map((item, i) => {
@@ -236,6 +274,30 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
                       </div>
                     )}
                   </div>
+                </button>
+              );
+            } else if (item.kind === "symbol") {
+              const badge = KIND_BADGE[item.symbol.kind];
+              return (
+                <button
+                  key={`${item.symbol.name}-${item.symbol.line}`}
+                  onClick={() => confirm(i)}
+                  onMouseEnter={() => setSelectedIdx(i)}
+                  className={`w-full text-left px-4 py-2 flex items-center gap-3 transition-colors ${
+                    isSelected ? "bg-blue-600/20 border-l-2 border-blue-500" : "border-l-2 border-transparent hover:bg-gray-800"
+                  }`}
+                  style={{ paddingLeft: `${16 + item.symbol.indent}px` }}
+                >
+                  <span className={`text-[10px] font-bold w-4 shrink-0 text-right leading-none ${badge.className}`}>
+                    {badge.label}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm ${isSelected ? "text-blue-200" : "text-gray-300"}`}>
+                      {highlightMatch(item.symbol.name, searchQuery)}
+                    </div>
+                    <div className="text-[11px] text-gray-600">{item.symbol.kind}</div>
+                  </div>
+                  <span className="text-[10px] text-gray-600 shrink-0 tabular-nums">:{item.symbol.line}</span>
                 </button>
               );
             } else {
@@ -270,7 +332,8 @@ export default function CommandPalette({ files, onOpenFile, onClose, commands = 
           <span><kbd className="font-mono">↑↓</kbd> navigate</span>
           <span><kbd className="font-mono">↵</kbd> open</span>
           <span><kbd className="font-mono">Esc</kbd> close</span>
-          {!isCommand && <span><kbd className="font-mono">&gt;</kbd> commands</span>}
+          {!isCommand && !isSymbol && <span><kbd className="font-mono">&gt;</kbd> commands</span>}
+          {!isCommand && !isSymbol && <span><kbd className="font-mono">@</kbd> symbols</span>}
         </div>
       </div>
     </div>

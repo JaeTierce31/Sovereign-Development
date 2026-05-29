@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useRef, useEffect } from "react";
 
-interface OutlineSymbol {
+export interface OutlineSymbol {
   name: string;
   kind: "class" | "function" | "method" | "variable" | "interface" | "type" | "enum" | "module" | "constant" | "property";
   line: number;
@@ -21,7 +21,7 @@ const KIND_ICON: Record<OutlineSymbol["kind"], { icon: string; color: string }> 
   property:  { icon: "p", color: "text-gray-300" },
 };
 
-function parseSymbols(content: string, language: string | null): OutlineSymbol[] {
+export function parseSymbols(content: string, language: string | null): OutlineSymbol[] {
   const lang = language ?? "";
   const lines = content.split("\n");
   const symbols: OutlineSymbol[] = [];
