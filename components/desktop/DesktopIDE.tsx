@@ -407,6 +407,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderParent, setNewFolderParent] = useState("");
+  const [treeFilterOpen, setTreeFilterOpen] = useState(false);
+  const [treeFilter, setTreeFilter] = useState("");
+  const treeFilterRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ id: string; value: string } | null>(null);
   const [dropTarget, setDropTarget] = useState(false);
@@ -889,6 +892,37 @@ function IDECore({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (importUrlOpen) setTimeout(() => importUrlRef.current?.focus(), 0);
   }, [importUrlOpen]);
+
+  useEffect(() => {
+    if (treeFilterOpen) setTimeout(() => treeFilterRef.current?.focus(), 0);
+    else setTreeFilter("");
+  }, [treeFilterOpen]);
+
+  const baseTreeFiles = files.filter((f) => !f.id.startsWith("scratch-"));
+  const filteredTreeFiles = treeFilter
+    ? baseTreeFiles.filter((f) => f.path.toLowerCase().includes(treeFilter.toLowerCase()))
+    : baseTreeFiles;
+
+  // Auto-expand parent folders of matched files while filter is active
+  useEffect(() => {
+    if (!treeFilter) return;
+    const matched = baseTreeFiles.filter((f) => f.path.toLowerCase().includes(treeFilter.toLowerCase()));
+    const toExpand = new Set<string>();
+    for (const f of matched) {
+      const parts = f.path.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        toExpand.add(parts.slice(0, i).join("/"));
+      }
+    }
+    if (toExpand.size > 0) {
+      setExpandedFolders((prev) => {
+        const next = new Set(prev);
+        toExpand.forEach((p) => next.add(p));
+        return next;
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeFilter]);
 
   useEffect(() => { setSelectionStats(null); }, [activeFileId]);
 
@@ -1705,6 +1739,13 @@ function IDECore({ projectId }: { projectId: string }) {
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Explorer</span>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setTreeFilterOpen((v) => !v)}
+                  className={`transition-colors leading-none text-[11px] ${treeFilterOpen ? "text-blue-400 hover:text-blue-300" : "text-gray-500 hover:text-gray-300"}`}
+                  title={treeFilterOpen ? "Clear filter" : "Filter files"}
+                >
+                  ⌕
+                </button>
+                <button
                   onClick={() => {
                     const all = new Set<string>();
                     for (const f of files) {
@@ -1744,6 +1785,26 @@ function IDECore({ projectId }: { projectId: string }) {
                 </button>
               </div>
             </div>
+            {treeFilterOpen && (
+              <div className="px-3 pb-2">
+                <input
+                  ref={treeFilterRef}
+                  value={treeFilter}
+                  onChange={(e) => setTreeFilter(e.target.value)}
+                  placeholder="Filter files…"
+                  className="w-full px-2 py-1 text-xs bg-gray-800 border border-gray-700 focus:border-blue-500 rounded text-gray-300 placeholder-gray-600 focus:outline-none"
+                  onKeyDown={(e) => { if (e.key === "Escape") { setTreeFilterOpen(false); } }}
+                />
+                {treeFilter && (
+                  <div className="mt-1 text-[10px] text-gray-600">
+                    {(() => {
+                      const count = files.filter((f) => !f.id.startsWith("scratch-") && f.path.toLowerCase().includes(treeFilter.toLowerCase())).length;
+                      return `${count} match${count !== 1 ? "es" : ""}`;
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
 
             {showNewFile && (
               <form onSubmit={createFile} className="px-3 pb-2">
@@ -1840,7 +1901,7 @@ function IDECore({ projectId }: { projectId: string }) {
               <div className="px-4 py-2 text-xs text-gray-600">Loading…</div>
             ) : (
               <FileTree
-                files={files.filter((f) => !f.id.startsWith("scratch-"))}
+                files={filteredTreeFiles}
                 activeFileId={activeFileId}
                 dirtyTabs={dirtyTabs}
                 renamingId={renamingId}
