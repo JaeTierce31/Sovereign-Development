@@ -165,6 +165,8 @@ interface FileTreeProps {
   onMoveFolder?: (oldPath: string, newPath: string) => void;
   expandedFolders: Set<string>;
   onToggleFolder: (path: string) => void;
+  revealFileId?: string | null;
+  revealSeq?: number;
 }
 
 function TreeNodeRow({
@@ -402,6 +404,25 @@ export default function FileTree(props: FileTreeProps) {
     const el = treeContainerRef.current.querySelector<HTMLElement>(`[data-path="${CSS.escape(focusedPath)}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [focusedPath]);
+
+  // Reveal active file: expand parent folders then scroll to file row
+  useEffect(() => {
+    if (!props.revealSeq || !props.revealFileId) return;
+    const file = files.find((f) => f.id === props.revealFileId);
+    if (!file) return;
+    const parts = file.path.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const folderPath = parts.slice(0, i).join("/");
+      if (!expandedFolders.has(folderPath)) onToggleFolder(folderPath);
+    }
+    const filePath = file.path;
+    setTimeout(() => {
+      if (!treeContainerRef.current) return;
+      const el = treeContainerRef.current.querySelector<HTMLElement>(`[data-path="${CSS.escape(filePath)}"]`);
+      if (el) { el.scrollIntoView({ block: "nearest" }); setFocusedPath(filePath); }
+    }, 60);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.revealSeq]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     const handled = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Delete", "Backspace", "Home", "End", "F2"];

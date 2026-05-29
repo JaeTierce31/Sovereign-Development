@@ -430,6 +430,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [breadcrumbPopover, setBreadcrumbPopover] = useState<{ folderPath: string; x: number; y: number } | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [zenMode, setZenMode] = useState(false);
+  const [revealSeq, setRevealSeq] = useState(0);
   const navBackStackRef = useRef<Array<{ fileId: string; line: number; col: number }>>([]);
   const navForwardStackRef = useRef<Array<{ fileId: string; line: number; col: number }>>([]);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -666,6 +667,12 @@ function IDECore({ projectId }: { projectId: string }) {
       openFile(target.fileId);
     }
   }, [openFile]);
+
+  const revealActiveFile = useCallback(() => {
+    setSidebarOpen(true);
+    setSidebarTab("explorer");
+    setRevealSeq((s) => s + 1);
+  }, []);
 
   useEffect(() => {
     if (!activeFileId) return;
@@ -1095,11 +1102,14 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (e.key === "?" && !mod && !e.shiftKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);
+      } else if (e.altKey && e.shiftKey && (e.key === "e" || e.key === "E") && !mod) {
+        e.preventDefault();
+        revealActiveFile();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark]);
+  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -1849,6 +1859,8 @@ function IDECore({ projectId }: { projectId: string }) {
                 onMoveFolder={moveFolder}
                 expandedFolders={expandedFolders}
                 onToggleFolder={toggleFolder}
+                revealFileId={activeFileId}
+                revealSeq={revealSeq}
               />
             )}
           </>
@@ -2056,13 +2068,26 @@ function IDECore({ projectId }: { projectId: string }) {
             <button
               onClick={goForwardInHistory}
               disabled={!canGoForward}
-              className={`shrink-0 p-0.5 rounded transition-colors mr-1 ${canGoForward ? "text-gray-400 hover:text-white hover:bg-gray-700/60" : "text-gray-700 cursor-default"}`}
+              className={`shrink-0 p-0.5 rounded transition-colors ${canGoForward ? "text-gray-400 hover:text-white hover:bg-gray-700/60" : "text-gray-700 cursor-default"}`}
               title="Go forward to next location"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 18l6-6-6-6" />
               </svg>
             </button>
+            {activeFileId && !activeFileId.startsWith("scratch-") && (
+              <button
+                onClick={revealActiveFile}
+                className="shrink-0 p-0.5 rounded transition-colors text-gray-600 hover:text-gray-300 hover:bg-gray-700/60 mr-1"
+                title="Reveal active file in Explorer"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
+                  <path d="M11 8v6M8 11h6" />
+                </svg>
+              </button>
+            )}
             {activeFile ? (
               <nav className="flex items-center gap-0.5 text-xs min-w-0 overflow-hidden" aria-label="File path">
                 {activeFileId?.startsWith("scratch-") && (
@@ -2936,6 +2961,7 @@ function IDECore({ projectId }: { projectId: string }) {
           onOpenFile={(id) => { openFile(id); setCommandPaletteOpen(false); }}
           onClose={() => setCommandPaletteOpen(false)}
           commands={[
+            { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
             { id: "new-file", label: "New File", description: "⌘/Ctrl N", icon: "+", action: () => setShowNewFile(true) },
@@ -3309,6 +3335,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift Z", "Toggle zen mode"],
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
+                ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["⌘/Ctrl Shift T", "Reopen closed tab"],
                 ["⌘/Ctrl Shift H", "Local history"],
