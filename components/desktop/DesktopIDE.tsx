@@ -457,6 +457,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [zenMode, setZenMode] = useState(false);
   const [revealSeq, setRevealSeq] = useState(0);
+  const editorPaneRef = useRef<HTMLDivElement>(null);
   const navBackStackRef = useRef<Array<{ fileId: string; line: number; col: number }>>([]);
   const navForwardStackRef = useRef<Array<{ fileId: string; line: number; col: number }>>([]);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -720,6 +721,19 @@ function IDECore({ projectId }: { projectId: string }) {
     if (!activeFileId) return;
     mruTabsRef.current = [activeFileId, ...mruTabsRef.current.filter((x) => x !== activeFileId)];
   }, [activeFileId]);
+
+  // Ctrl+Wheel to zoom editor font size (non-passive to allow preventDefault)
+  useEffect(() => {
+    const el = editorPaneRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setPrefs((p) => ({ ...p, fontSize: Math.max(8, Math.min(36, p.fontSize + (e.deltaY < 0 ? 1 : -1))) }));
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Ctrl+Tab / Ctrl+Shift+Tab tab switcher keyboard handling
   useEffect(() => {
@@ -1185,6 +1199,12 @@ function IDECore({ projectId }: { projectId: string }) {
           if (cur === "search") return "explorer";
           return "search";
         });
+      } else if (mod && (e.key === "=" || e.key === "+")) {
+        e.preventDefault();
+        setPrefs((p) => ({ ...p, fontSize: Math.min(36, p.fontSize + 1) }));
+      } else if (mod && e.key === "-" && !e.shiftKey) {
+        e.preventDefault();
+        setPrefs((p) => ({ ...p, fontSize: Math.max(8, p.fontSize - 1) }));
       } else if (mod && e.key === ",") {
         e.preventDefault();
         setPrefsOpen((v) => !v);
@@ -2447,6 +2467,7 @@ function IDECore({ projectId }: { projectId: string }) {
           <div className="flex min-w-0 flex-1" style={{ minHeight: 0 }}>
             {/* Primary pane */}
             <div
+              ref={editorPaneRef}
               className="flex min-w-0 flex-col"
               style={{ width: splitFileId ? `${splitRatio * 100}%` : undefined, flex: splitFileId ? undefined : "1 1 0" }}
             >
@@ -3575,6 +3596,8 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["Ctrl Tab / Shift Tab", "MRU tab switcher"],
+                ["⌘/Ctrl = / −", "Font size +1 / −1"],
+                ["Ctrl+Wheel (in editor)", "Zoom font size"],
                 ["⌘/Ctrl Shift T", "Reopen closed tab"],
                 ["⌘/Ctrl Shift H", "Local history"],
                 ["⌘/Ctrl PageDown", "Next tab"],
