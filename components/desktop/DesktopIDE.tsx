@@ -365,6 +365,135 @@ const TERM_HEIGHT_MIN = 80;
 const TERM_HEIGHT_MAX = 700;
 const TERM_HEIGHT_DEFAULT = 280;
 
+function WelcomeScreen({
+  projectName,
+  recentFileIds,
+  files,
+  onOpenFile,
+  onNewFile,
+  onOpenFinder,
+  onOpenSearch,
+}: {
+  projectName: string;
+  recentFileIds: string[];
+  files: ProjectFile[];
+  onOpenFile: (id: string) => void;
+  onNewFile: () => void;
+  onOpenFinder: () => void;
+  onOpenSearch: () => void;
+}) {
+  const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+  const mod = isMac ? "⌘" : "Ctrl";
+  const recentFiles = recentFileIds
+    .map((id) => files.find((f) => f.id === id))
+    .filter((f): f is ProjectFile => !!f)
+    .slice(0, 6);
+  const shortcuts = [
+    [`${mod}P`, "Go to file"],
+    [`${mod}Shift+F`, "Find in files"],
+    [`${mod}Shift+P`, "Command palette"],
+    [`${mod}Tab`, "Switch tabs (MRU)"],
+    [`${mod}\\`, "Split editor"],
+    [`${mod}Shift+Z`, "Zen mode"],
+    [`${mod}G`, "Go to line"],
+    [`${mod}K ${mod}T`, "Change theme"],
+  ] as [string, string][];
+
+  const totalLines = files.reduce((acc, f) => acc + (f.content ?? "").split("\n").length, 0);
+  const langCounts: Record<string, number> = {};
+  for (const f of files) {
+    const lang = f.language ?? inferLanguage(f.path);
+    langCounts[lang] = (langCounts[lang] ?? 0) + 1;
+  }
+  const topLangs = Object.entries(langCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  return (
+    <div className="h-full overflow-auto bg-gray-950 flex items-start justify-center py-12 px-6">
+      <div className="w-full max-w-xl space-y-8">
+        {/* Header */}
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-blue-400 text-2xl font-bold tracking-tight">⬡ Peregrine</span>
+          </div>
+          {projectName && (
+            <p className="text-gray-400 text-sm truncate">{projectName}</p>
+          )}
+          <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-600">
+            <span>{files.length} file{files.length !== 1 ? "s" : ""}</span>
+            <span>·</span>
+            <span>{totalLines.toLocaleString()} lines</span>
+            {topLangs.length > 0 && (
+              <>
+                <span>·</span>
+                <span>{topLangs.map(([l]) => l).join(", ")}</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Quick actions */}
+        <div>
+          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider mb-2">Start</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "New File", icon: "+", action: onNewFile, hint: `${mod}N` },
+              { label: "Go to File", icon: "⌕", action: onOpenFinder, hint: `${mod}P` },
+              { label: "Search", icon: "⌕", action: onOpenSearch, hint: `${mod}⇧F` },
+            ].map(({ label, icon, action, hint }) => (
+              <button
+                key={label}
+                onClick={action}
+                className="flex flex-col items-center gap-1 py-3 rounded-lg bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-gray-700 transition-colors text-gray-400 hover:text-white"
+              >
+                <span className="text-lg leading-none">{icon}</span>
+                <span className="text-xs font-medium">{label}</span>
+                <span className="text-[10px] text-gray-600">{hint}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent files */}
+        {recentFiles.length > 0 && (
+          <div>
+            <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider mb-2">Recent</p>
+            <div className="space-y-0.5">
+              {recentFiles.map((f) => {
+                const name = f.path.split("/").pop() ?? f.path;
+                const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => onOpenFile(f.id)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-gray-900 text-left transition-colors group"
+                  >
+                    <FileIcon filename={name} />
+                    <span className="text-sm text-gray-300 group-hover:text-white truncate flex-1">{name}</span>
+                    {dir && <span className="text-[11px] text-gray-600 truncate max-w-[140px] shrink-0">{dir}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Shortcuts */}
+        <div>
+          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider mb-2">Keyboard Shortcuts</p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+            {shortcuts.map(([keys, desc]) => (
+              <div key={keys} className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-gray-500">{desc}</span>
+                <kbd className="text-[10px] text-gray-600 bg-gray-900 border border-gray-700 rounded px-1.5 py-0.5 font-mono shrink-0">{keys}</kbd>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function IDECore({ projectId }: { projectId: string }) {
   const router = useRouter();
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -2604,8 +2733,8 @@ function IDECore({ projectId }: { projectId: string }) {
                     )
                   ) : (
                     !loading && (
-                      <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-                        {files.length === 0 ? (
+                      files.length === 0 ? (
+                        <div className="flex items-center justify-center h-full text-gray-600 text-sm">
                           <div className="text-center">
                             <p className="mb-2">No files yet.</p>
                             <button
@@ -2615,8 +2744,18 @@ function IDECore({ projectId }: { projectId: string }) {
                               + Create a file
                             </button>
                           </div>
-                        ) : "Select a file"}
-                      </div>
+                        </div>
+                      ) : (
+                        <WelcomeScreen
+                          projectName={projectName}
+                          recentFileIds={recentFileIds}
+                          files={files}
+                          onOpenFile={openFile}
+                          onNewFile={() => setShowNewFile(true)}
+                          onOpenFinder={() => setFinderOpen(true)}
+                          onOpenSearch={() => setSearchOpen(true)}
+                        />
+                      )
                     )
                   )}
                 </div>
