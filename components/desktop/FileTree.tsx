@@ -157,6 +157,7 @@ interface FileTreeProps {
   onCommitRename: (id: string) => void;
   onDeleteFile: (id: string, e: React.MouseEvent) => void;
   onDuplicateFile?: (id: string) => void;
+  onCopyImport?: (filePath: string) => void;
   defaultFolderPath?: string;
   onFolderPathChange?: (path: string) => void;
   onNewFileInFolder?: (folderPath: string) => void;
@@ -392,6 +393,7 @@ export default function FileTree(props: FileTreeProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [copiedImport, setCopiedImport] = useState(false);
   const [copiedFolderPath, setCopiedFolderPath] = useState(false);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -633,6 +635,18 @@ export default function FileTree(props: FileTreeProps) {
           >
             {copiedPath ? "✓ Copied!" : "Copy Path"}
           </button>
+          {props.onCopyImport && /\.[tj]sx?$/.test(contextMenu.filePath) && (
+            <button
+              className={`${ITEM} ${copiedImport ? "text-green-400" : ""}`}
+              onClick={() => {
+                props.onCopyImport!(contextMenu.filePath);
+                setCopiedImport(true);
+                setTimeout(() => { setCopiedImport(false); setContextMenu(null); }, 1200);
+              }}
+            >
+              {copiedImport ? "✓ Copied!" : "Copy as Import"}
+            </button>
+          )}
           {props.onDuplicateFile && (
             <button
               className={ITEM}

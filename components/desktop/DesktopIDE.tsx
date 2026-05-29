@@ -334,6 +334,21 @@ function getFileTemplate(filename: string): string {
   return FILE_TEMPLATES[ext] ?? "";
 }
 
+function computeRelativeImport(fromPath: string, toPath: string): string {
+  const fromDir = fromPath.includes("/") ? fromPath.slice(0, fromPath.lastIndexOf("/")) : "";
+  const fromParts = fromDir ? fromDir.split("/") : [];
+  const toParts = toPath.split("/");
+  let common = 0;
+  while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+    common++;
+  }
+  const ups = fromParts.length - common;
+  const down = toParts.slice(common);
+  const rel = [...Array(ups).fill(".."), ...down].join("/");
+  const withoutExt = rel.replace(/\.[tj]sx?$/, "");
+  return withoutExt.startsWith(".") ? withoutExt : "./" + withoutExt;
+}
+
 const SIDEBAR_WIDTH_KEY = "peregrine:sidebar-width";
 const SIDEBAR_MIN = 140;
 const SIDEBAR_MAX = 480;
@@ -1432,6 +1447,16 @@ function IDECore({ projectId }: { projectId: string }) {
     setTimeout(() => newFolderInputRef.current?.focus(), 0);
   }
 
+  const copyAsImport = useCallback((targetPath: string) => {
+    const fromPath = files.find((f) => f.id === activeFileId)?.path ?? "";
+    const relImport = computeRelativeImport(fromPath, targetPath);
+    const name = targetPath.split("/").pop()?.replace(/\.[tj]sx?$/, "") ?? "";
+    const stmt = /^[A-Z]/.test(name)
+      ? `import ${name} from '${relImport}';`
+      : `import { } from '${relImport}';`;
+    navigator.clipboard.writeText(stmt).catch(() => {});
+  }, [files, activeFileId]);
+
   async function createFolder(e: React.FormEvent) {
     e.preventDefault();
     const seg = newFolderName.trim().replace(/[/\\]+/g, "");
@@ -1998,6 +2023,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 onCommitRename={commitRename}
                 onDeleteFile={deleteFile}
                 onDuplicateFile={duplicateFile}
+                onCopyImport={copyAsImport}
                 onNewFileInFolder={newFileInFolder}
                 onNewFolderInFolder={newFolderHere}
                 onRenameFolder={startRenameFolder}
