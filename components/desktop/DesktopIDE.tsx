@@ -2180,6 +2180,16 @@ function IDECore({ projectId }: { projectId: string }) {
               const isActive = tabId === activeFileId;
               const isPinned = pinnedTabs.has(tabId);
               const isDragOver = dragOverIndex === tabIdx && dragTabIndex.current !== null && dragTabIndex.current !== tabIdx;
+              const tabBasename = tabFile.path.split("/").pop() ?? tabFile.path;
+              const hasDuplicate = openTabs.some((id) => {
+                if (id === tabId) return false;
+                const other = files.find((f) => f.id === id);
+                return !!other && (other.path.split("/").pop() ?? other.path) === tabBasename;
+              });
+              const tabParts = tabFile.path.split("/");
+              const tabLabel = hasDuplicate && tabParts.length > 1
+                ? `${tabParts[tabParts.length - 2]}/${tabBasename}`
+                : tabBasename;
               return (
                 <div
                   key={tabId}
@@ -2215,12 +2225,13 @@ function IDECore({ projectId }: { projectId: string }) {
                     setTabContextMenu({ tabId, x: e.clientX, y: e.clientY });
                   }}
                   data-active={isActive ? "true" : undefined}
+                  title={tabFile.path}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs border-r border-gray-700 cursor-pointer shrink-0 select-none transition-colors ${
                     isActive
                       ? "bg-gray-900 text-white border-t-2 border-t-blue-500"
                       : "bg-gray-950 text-gray-400 hover:text-gray-200 hover:bg-gray-900 border-t-2 border-t-transparent"
                   } ${isDragOver ? "border-l-2 border-l-blue-400" : ""}`}
-                  style={{ maxWidth: "180px" }}
+                  style={{ maxWidth: "200px" }}
                   onClick={() => setActiveFileId(tabId)}
                 >
                   {isPinned ? (
@@ -2228,9 +2239,9 @@ function IDECore({ projectId }: { projectId: string }) {
                   ) : dirtyTabs.has(tabId) ? (
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" title="Unsaved changes" />
                   ) : null}
-                  <FileIcon filename={tabFile.path.split("/").pop() ?? tabFile.path} />
+                  <FileIcon filename={tabBasename} />
                   <span className={`truncate ${tabId.startsWith("scratch-") ? "italic text-gray-400" : ""}`}>
-                    {tabFile.path.split("/").pop()}
+                    {tabId.startsWith("scratch-") ? tabBasename : tabLabel}
                   </span>
                   {!isPinned && (
                     <button
