@@ -13,6 +13,24 @@ export interface SearchResult {
   matchEnd: number;
 }
 
+/** Convert a glob pattern (supports * and ?) to a RegExp that matches a full path segment or full path. */
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '.+')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]');
+  return new RegExp(`(^|/)${escaped}($|/)`, 'i');
+}
+
+function matchesAnyGlob(path: string, patterns: string[]): boolean {
+  const filename = path.split('/').pop() ?? path;
+  return patterns.some((p) => {
+    const re = globToRegex(p.trim());
+    return re.test(path) || globToRegex(p.trim()).test(filename);
+  });
+}
+
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
@@ -22,6 +40,12 @@ export async function GET(
   const query = searchParams.get('q')?.trim();
   const isRegex = searchParams.get('regex') === '1';
   const caseSensitive = searchParams.get('cs') === '1';
+  const wholeWord = searchParams.get('word') === '1';
+  const includeRaw = searchParams.get('include')?.trim();
+  const excludeRaw = searchParams.get('exclude')?.trim();
+
+  const includePatterns = includeRaw ? includeRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const excludePatterns = excludeRaw ? excludeRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
   if (!query || query.length < 1) {
     return NextResponse.json({ results: [] });
@@ -34,9 +58,12 @@ export async function GET(
 
   if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  let pattern = isRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (wholeWord) pattern = `\\b${pattern}\\b`;
+
   let regex: RegExp;
   try {
-    regex = new RegExp(isRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), caseSensitive ? 'g' : 'gi');
+    regex = new RegExp(pattern, caseSensitive ? 'g' : 'gi');
   } catch {
     return NextResponse.json({ error: 'Invalid regex' }, { status: 400 });
   }
@@ -52,6 +79,9 @@ export async function GET(
 
   for (const file of rows) {
     if (!file.content) continue;
+    if (includePatterns.length > 0 && !matchesAnyGlob(file.path, includePatterns)) continue;
+    if (excludePatterns.length > 0 && matchesAnyGlob(file.path, excludePatterns)) continue;
+
     const lines = file.content.split('\n');
     for (let i = 0; i < lines.length && results.length < MAX_RESULTS; i++) {
       const line = lines[i];

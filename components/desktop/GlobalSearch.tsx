@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { SearchResult } from "@/app/api/projects/[id]/search/route";
+import FileIcon from "./FileIcon";
 
 interface GroupedResults {
   path: string;
@@ -37,6 +38,10 @@ export default function GlobalSearch({
   const [showReplace, setShowReplace] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [includeFilter, setIncludeFilter] = useState("");
+  const [excludeFilter, setExcludeFilter] = useState("");
   const [regexError, setRegexError] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,7 +60,7 @@ export default function GlobalSearch({
   const minLen = useRegex ? 1 : 2;
 
   const search = useCallback(
-    (q: string, regex: boolean, cs: boolean) => {
+    (q: string, regex: boolean, cs: boolean, word: boolean, include: string, exclude: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       setReplacedCount(null);
       setRegexError(false);
@@ -64,8 +69,13 @@ export default function GlobalSearch({
       debounceRef.current = setTimeout(async () => {
         setLoading(true);
         try {
-          const url = `/api/projects/${projectId}/search?q=${encodeURIComponent(q)}${regex ? "&regex=1" : ""}${cs ? "&cs=1" : ""}`;
-          const res = await fetch(url);
+          const params = new URLSearchParams({ q });
+          if (regex) params.set("regex", "1");
+          if (cs) params.set("cs", "1");
+          if (word) params.set("word", "1");
+          if (include.trim()) params.set("include", include.trim());
+          if (exclude.trim()) params.set("exclude", exclude.trim());
+          const res = await fetch(`/api/projects/${projectId}/search?${params}`);
           if (res.ok) {
             const data = await res.json();
             setResults(data.results ?? []);
@@ -82,8 +92,8 @@ export default function GlobalSearch({
   );
 
   useEffect(() => {
-    search(query, useRegex, caseSensitive);
-  }, [query, useRegex, caseSensitive, search]);
+    search(query, useRegex, caseSensitive, wholeWord, includeFilter, excludeFilter);
+  }, [query, useRegex, caseSensitive, wholeWord, includeFilter, excludeFilter, search]);
 
   const grouped: GroupedResults[] = [];
   for (const r of results) {
@@ -106,7 +116,8 @@ export default function GlobalSearch({
   }
 
   function buildReplaceRegex(q: string): RegExp {
-    const pattern = useRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let pattern = useRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (wholeWord) pattern = `\\b${pattern}\\b`;
     return new RegExp(pattern, caseSensitive ? "g" : "gi");
   }
 
@@ -169,7 +180,7 @@ export default function GlobalSearch({
     return (
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
         {/* Search row */}
-        <div className={`flex items-center gap-2 px-3 py-2 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
+        <div className={`flex items-center gap-1.5 px-3 py-2 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
           <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
@@ -181,9 +192,38 @@ export default function GlobalSearch({
             className="flex-1 bg-transparent text-white text-xs placeholder-gray-500 focus:outline-none min-w-0"
             onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
           />
-          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Case sensitive">Aa</ToggleBtn>
+          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Match case">Aa</ToggleBtn>
+          <ToggleBtn active={wholeWord} onClick={() => setWholeWord((v) => !v)} title="Match whole word">W</ToggleBtn>
           <ToggleBtn active={useRegex} onClick={() => setUseRegex((v) => !v)} title="Use regex">.*</ToggleBtn>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            title="Filter files"
+            className={`px-1 py-0.5 text-xs rounded transition-colors shrink-0 ${showFilters ? "text-blue-400" : "text-gray-600 hover:text-gray-300"}`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M3 4h18M7 12h10M11 20h2" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
+
+        {/* File filters */}
+        {showFilters && (
+          <div className="px-3 py-1.5 border-b border-gray-700 shrink-0 flex flex-col gap-1">
+            <input
+              value={includeFilter}
+              onChange={(e) => setIncludeFilter(e.target.value)}
+              placeholder="Files to include (e.g. *.ts,src/*)"
+              className="w-full bg-transparent text-white text-[10px] placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+            />
+            <input
+              value={excludeFilter}
+              onChange={(e) => setExcludeFilter(e.target.value)}
+              placeholder="Files to exclude (e.g. *.test.ts,dist/*)"
+              className="w-full bg-transparent text-white text-[10px] placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+            />
+          </div>
+        )}
+
         {/* Replace row */}
         <div className={`flex items-center gap-2 px-3 py-1.5 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
           <svg className="w-3.5 h-3.5 text-gray-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -228,36 +268,44 @@ export default function GlobalSearch({
               {useRegex ? "Type a pattern…" : "Type 2+ chars to search"}
             </div>
           )}
-          {grouped.map((group) => (
-            <div key={group.fileId} className="border-b border-gray-800/60 last:border-0">
-              <div className="flex items-center justify-between px-3 py-1 bg-gray-800/40 sticky top-0">
-                <span className="text-[10px] font-medium text-blue-400 truncate">{group.path}</span>
-                {replaceText !== "" && (
-                  <button
-                    onClick={() => handleReplaceAllInFile(group.fileId)}
-                    disabled={replacing || !query}
-                    className="text-[10px] text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-1"
-                  >
-                    Replace ({group.matches.length})
-                  </button>
-                )}
-              </div>
-              {group.matches.map((match, i) => (
-                <button
-                  key={i}
-                  onClick={() => onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1)}
-                  className="w-full text-left px-3 py-1.5 hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-gray-600 text-[10px] w-6 shrink-0 text-right">{match.lineNumber}</span>
-                    <span className="text-[10px] font-mono truncate">
-                      {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
-                    </span>
+          {grouped.map((group) => {
+            const filename = group.path.split("/").pop() ?? group.path;
+            const dir = group.path.includes("/") ? group.path.substring(0, group.path.lastIndexOf("/")) : "";
+            return (
+              <div key={group.fileId} className="border-b border-gray-800/60 last:border-0">
+                <div className="flex items-center justify-between px-3 py-1 bg-gray-800/40 sticky top-0 gap-1 min-w-0">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <FileIcon filename={filename} />
+                    <span className="text-[10px] font-medium text-gray-200 truncate">{filename}</span>
+                    {dir && <span className="text-[10px] text-gray-600 truncate shrink-0">{dir}</span>}
                   </div>
-                </button>
-              ))}
-            </div>
-          ))}
+                  {replaceText !== "" && (
+                    <button
+                      onClick={() => handleReplaceAllInFile(group.fileId)}
+                      disabled={replacing || !query}
+                      className="text-[10px] text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-1"
+                    >
+                      Replace ({group.matches.length})
+                    </button>
+                  )}
+                </div>
+                {group.matches.map((match, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1)}
+                    className="w-full text-left px-3 py-1.5 hover:bg-gray-800 transition-colors"
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-gray-600 text-[10px] w-6 shrink-0 text-right tabular-nums">{match.lineNumber}</span>
+                      <span className="text-[10px] font-mono truncate">
+                        {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -282,8 +330,18 @@ export default function GlobalSearch({
             className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none min-w-0"
             onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
           />
-          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Case sensitive">Aa</ToggleBtn>
+          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Match case">Aa</ToggleBtn>
+          <ToggleBtn active={wholeWord} onClick={() => setWholeWord((v) => !v)} title="Match whole word">W</ToggleBtn>
           <ToggleBtn active={useRegex} onClick={() => setUseRegex((v) => !v)} title="Use regex">.*</ToggleBtn>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            title="Filter files"
+            className={`px-1.5 py-0.5 text-xs rounded transition-colors shrink-0 ${showFilters ? "bg-blue-600/30 text-blue-300 border border-blue-600/50" : "text-gray-600 hover:text-gray-300 border border-transparent"}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M3 4h18M7 12h10M11 20h2" strokeLinecap="round" />
+            </svg>
+          </button>
           {loading && <span className="text-gray-600 text-xs shrink-0">Searching…</span>}
           {regexError && <span className="text-red-500 text-xs shrink-0">Bad regex</span>}
           {!loading && !regexError && query.length >= minLen && replacedCount === null && (
@@ -300,6 +358,30 @@ export default function GlobalSearch({
             Replace
           </button>
         </div>
+
+        {/* File filters */}
+        {showFilters && (
+          <div className="px-4 py-2.5 border-b border-gray-700 bg-gray-800/30 flex gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-gray-500 mb-1">Files to include</div>
+              <input
+                value={includeFilter}
+                onChange={(e) => setIncludeFilter(e.target.value)}
+                placeholder="e.g. *.ts, src/**"
+                className="w-full bg-gray-800 text-white text-xs placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-gray-500 mb-1">Files to exclude</div>
+              <input
+                value={excludeFilter}
+                onChange={(e) => setExcludeFilter(e.target.value)}
+                placeholder="e.g. *.test.ts, dist/**"
+                className="w-full bg-gray-800 text-white text-xs placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Replace row */}
         {showReplace && (
@@ -345,36 +427,44 @@ export default function GlobalSearch({
           {regexError && (
             <div className="px-4 py-8 text-center text-red-600 text-sm">Invalid regular expression</div>
           )}
-          {grouped.map((group) => (
-            <div key={group.fileId} className="border-b border-gray-800 last:border-0">
-              <div className="flex items-center justify-between px-4 py-1.5 bg-gray-800/50 sticky top-0">
-                <span className="text-xs font-medium text-blue-400">{group.path}</span>
-                {showReplace && (
-                  <button
-                    onClick={() => handleReplaceAllInFile(group.fileId)}
-                    disabled={replacing || !query}
-                    className="text-xs text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-2"
-                  >
-                    Replace in file ({group.matches.length})
-                  </button>
-                )}
-              </div>
-              {group.matches.map((match, i) => (
-                <button
-                  key={i}
-                  onClick={() => { onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1); onClose(); }}
-                  className="w-full text-left px-4 py-2 hover:bg-gray-800 transition-colors"
-                >
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-gray-600 text-xs w-8 shrink-0 text-right">{match.lineNumber}</span>
-                    <span className="text-xs font-mono truncate">
-                      {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
-                    </span>
+          {grouped.map((group) => {
+            const filename = group.path.split("/").pop() ?? group.path;
+            const dir = group.path.includes("/") ? group.path.substring(0, group.path.lastIndexOf("/")) : "";
+            return (
+              <div key={group.fileId} className="border-b border-gray-800 last:border-0">
+                <div className="flex items-center justify-between px-4 py-1.5 bg-gray-800/50 sticky top-0 gap-2 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <FileIcon filename={filename} />
+                    <span className="text-xs font-medium text-gray-200 shrink-0">{filename}</span>
+                    {dir && <span className="text-xs text-gray-500 truncate">{dir}</span>}
                   </div>
-                </button>
-              ))}
-            </div>
-          ))}
+                  {showReplace && (
+                    <button
+                      onClick={() => handleReplaceAllInFile(group.fileId)}
+                      disabled={replacing || !query}
+                      className="text-xs text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-2"
+                    >
+                      Replace in file ({group.matches.length})
+                    </button>
+                  )}
+                </div>
+                {group.matches.map((match, i) => (
+                  <button
+                    key={i}
+                    onClick={() => { onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1); onClose(); }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-800 transition-colors"
+                  >
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-gray-600 text-xs w-8 shrink-0 text-right tabular-nums">{match.lineNumber}</span>
+                      <span className="text-xs font-mono truncate">
+                        {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
