@@ -25,7 +25,7 @@ export default function GlobalSearch({
 }: {
   projectId: string;
   files: ProjectFile[];
-  onSelect: (fileId: string) => void;
+  onSelect: (fileId: string, line: number, col?: number, colEnd?: number) => void;
   onClose: () => void;
   onFileSave?: (fileId: string, content: string) => void;
   inline?: boolean;
@@ -245,7 +245,7 @@ export default function GlobalSearch({
               {group.matches.map((match, i) => (
                 <button
                   key={i}
-                  onClick={() => onSelect(match.fileId)}
+                  onClick={() => onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1)}
                   className="w-full text-left px-3 py-1.5 hover:bg-gray-800 transition-colors"
                 >
                   <div className="flex items-baseline gap-2">
@@ -362,7 +362,7 @@ export default function GlobalSearch({
               {group.matches.map((match, i) => (
                 <button
                   key={i}
-                  onClick={() => { onSelect(match.fileId); onClose(); }}
+                  onClick={() => { onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1); onClose(); }}
                   className="w-full text-left px-4 py-2 hover:bg-gray-800 transition-colors"
                 >
                   <div className="flex items-baseline gap-3">

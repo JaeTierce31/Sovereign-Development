@@ -364,7 +364,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline" | "todo" | "bookmarks">("explorer");
-  const pendingJumpRef = useRef<{ fileId: string; line: number } | null>(null);
+  const pendingJumpRef = useRef<{ fileId: string; line: number; col?: number; colEnd?: number } | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
     if (typeof window === "undefined") return [];
     try { return JSON.parse(localStorage.getItem(`peregrine:bookmarks:${projectId}`) ?? "[]"); }
@@ -584,9 +584,17 @@ function IDECore({ projectId }: { projectId: string }) {
     if (!jump || jump.fileId !== activeFileId) return;
     pendingJumpRef.current = null;
     const t = setTimeout(() => {
-      type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+      type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; setSelection: (s: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) => void; focus: () => void };
       const ed = editorInstanceRef.current as Ed | null;
-      if (ed) { ed.revealLineInCenter(jump.line); ed.setPosition({ lineNumber: jump.line, column: 1 }); ed.focus(); }
+      if (ed) {
+        ed.revealLineInCenter(jump.line);
+        if (jump.col !== undefined && jump.colEnd !== undefined) {
+          ed.setSelection({ startLineNumber: jump.line, startColumn: jump.col, endLineNumber: jump.line, endColumn: jump.colEnd });
+        } else {
+          ed.setPosition({ lineNumber: jump.line, column: 1 });
+        }
+        ed.focus();
+      }
     }, 80);
     return () => clearTimeout(t);
   }, [activeFileId]);
@@ -1780,7 +1788,24 @@ function IDECore({ projectId }: { projectId: string }) {
           <GlobalSearch
             projectId={projectId}
             files={files}
-            onSelect={(id) => { openFile(id); }}
+            onSelect={(id, line, col, colEnd) => {
+              if (id === activeFileId) {
+                type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; setSelection: (s: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) => void; focus: () => void };
+                const ed = editorInstanceRef.current as Ed | null;
+                if (ed) {
+                  ed.revealLineInCenter(line);
+                  if (col !== undefined && colEnd !== undefined) {
+                    ed.setSelection({ startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: colEnd });
+                  } else {
+                    ed.setPosition({ lineNumber: line, column: 1 });
+                  }
+                  ed.focus();
+                }
+              } else {
+                pendingJumpRef.current = { fileId: id, line, col, colEnd };
+                openFile(id);
+              }
+            }}
             onClose={() => setSidebarTab("explorer")}
             onFileSave={(fileId, content) => {
               setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, content } : f));
@@ -2868,7 +2893,25 @@ function IDECore({ projectId }: { projectId: string }) {
         <GlobalSearch
           projectId={projectId}
           files={files}
-          onSelect={(id) => { openFile(id); setSearchOpen(false); }}
+          onSelect={(id, line, col, colEnd) => {
+            if (id === activeFileId) {
+              type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; setSelection: (s: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) => void; focus: () => void };
+              const ed = editorInstanceRef.current as Ed | null;
+              if (ed) {
+                ed.revealLineInCenter(line);
+                if (col !== undefined && colEnd !== undefined) {
+                  ed.setSelection({ startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: colEnd });
+                } else {
+                  ed.setPosition({ lineNumber: line, column: 1 });
+                }
+                ed.focus();
+              }
+            } else {
+              pendingJumpRef.current = { fileId: id, line, col, colEnd };
+              openFile(id);
+            }
+            setSearchOpen(false);
+          }}
           onClose={() => { setSearchOpen(false); }}
           onFileSave={(fileId, content) => {
             setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, content } : f));
