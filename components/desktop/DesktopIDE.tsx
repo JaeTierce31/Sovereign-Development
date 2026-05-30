@@ -18,6 +18,7 @@ import ProjectSettingsPanel from "./ProjectSettingsPanel";
 import ProjectStatsPanel from "./ProjectStatsPanel";
 import LocalHistoryPanel, { type Snapshot } from "./LocalHistoryPanel";
 import OutlinePanel, { parseSymbols } from "./OutlinePanel";
+import SymbolFinder from "./SymbolFinder";
 import TodoPanel from "./TodoPanel";
 import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
 import FileIcon from "./FileIcon";
@@ -503,6 +504,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [aiOpen, setAiOpen] = useState(false);
   const [termOpen, setTermOpen] = useState(false);
   const [finderOpen, setFinderOpen] = useState(false);
+  const [symbolFinderOpen, setSymbolFinderOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -1323,6 +1325,9 @@ function IDECore({ projectId }: { projectId: string }) {
           }
           return !on;
         });
+      } else if (mod && e.shiftKey && (e.key === "o" || e.key === "O")) {
+        e.preventDefault();
+        if (activeFileId) setSymbolFinderOpen((v) => !v);
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSidebarOpen(true);
@@ -1363,6 +1368,7 @@ function IDECore({ projectId }: { projectId: string }) {
           }
           return false;
         });
+        else if (symbolFinderOpen) setSymbolFinderOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1379,7 +1385,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
+  }, [projectId, finderOpen, symbolFinderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3330,6 +3336,22 @@ function IDECore({ projectId }: { projectId: string }) {
           openTabs={openTabs}
         />
       )}
+      {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
+        <SymbolFinder
+          content={activeFile.content ?? ""}
+          language={activeFile.language ?? inferLanguage(activeFile.path)}
+          filePath={activeFile.path}
+          onGoToLine={(line) => {
+            if (!editorInstanceRef.current) return;
+            type Ed = { revealLineInCenter: (l: number) => void; setPosition: (p: { lineNumber: number; column: number }) => void; focus: () => void };
+            const ed = editorInstanceRef.current as Ed;
+            ed.revealLineInCenter(line);
+            ed.setPosition({ lineNumber: line, column: 1 });
+            ed.focus();
+          }}
+          onClose={() => setSymbolFinderOpen(false)}
+        />
+      )}
       {commandPaletteOpen && (
         <CommandPalette
           files={files}
@@ -3346,6 +3368,7 @@ function IDECore({ projectId }: { projectId: string }) {
             setCommandPaletteOpen(false);
           }}
           commands={[
+            { id: "go-to-symbol", label: "Go to Symbol in File", description: "⌘/Ctrl Shift O — jump to function, class, etc.", icon: "@", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSymbolFinderOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -3763,6 +3786,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift Z", "Toggle zen mode"],
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
+                ["⌘/Ctrl Shift O", "Go to symbol in file"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["Ctrl Tab / Shift Tab", "MRU tab switcher"],
