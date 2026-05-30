@@ -574,6 +574,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const gotoLineRef = useRef<HTMLInputElement>(null);
   const scratchCounter = useRef(0);
   const dragTabIndex = useRef<number | null>(null);
+  const sessionStartRef = useRef(Date.now());
+  const [sessionMinutes, setSessionMinutes] = useState(0);
+  const [breakReminderDismissed, setBreakReminderDismissed] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const tabStripRef = useRef<HTMLDivElement>(null);
   const [tabStripOverflow, setTabStripOverflow] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
@@ -928,6 +931,14 @@ function IDECore({ projectId }: { projectId: string }) {
 
   // Persist user snippets to localStorage
   useEffect(() => { saveSnippets(userSnippets); }, [userSnippets]);
+
+  // Session timer — tick every 60 s
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSessionMinutes(Math.floor((Date.now() - sessionStartRef.current) / 60_000));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Persist bookmarks to localStorage
   useEffect(() => {
@@ -1807,6 +1818,11 @@ function IDECore({ projectId }: { projectId: string }) {
     const dirty = dirtyTabs.size;
     return Math.max(0, Math.min(100, 100 - totalErrors * 20 - totalWarnings * 3 - dirty * 1));
   }, [fileProblems, dirtyTabs]);
+
+  const sessionLabel = sessionMinutes < 60
+    ? `${sessionMinutes}m`
+    : `${Math.floor(sessionMinutes / 60)}h ${sessionMinutes % 60}m`;
+  const showBreakReminder = sessionMinutes >= 90 && !breakReminderDismissed;
 
   async function toggleShare() {
     const next = !isPublic;
@@ -3166,6 +3182,14 @@ function IDECore({ projectId }: { projectId: string }) {
                 title="Increase font size"
               >+</button>
             </span>
+            {sessionMinutes > 0 && (
+              <span
+                className={`tabular-nums transition-colors ${showBreakReminder ? "text-yellow-400" : "text-gray-600 hover:text-gray-400"}`}
+                title={showBreakReminder ? `${sessionLabel} — time for a break!` : `Session duration: ${sessionLabel}`}
+              >
+                {showBreakReminder ? "⏰" : "⏱"} {sessionLabel}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -3927,6 +3951,18 @@ function IDECore({ projectId }: { projectId: string }) {
           <span className="text-green-400">✓</span>
           <span>{uploadToast}</span>
           <button onClick={() => setUploadToast(null)} className="text-gray-400 hover:text-white ml-1">×</button>
+        </div>
+      )}
+      {showBreakReminder && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 bg-yellow-900/90 border border-yellow-600/50 rounded-xl shadow-xl text-sm text-yellow-100 z-50 backdrop-blur-sm">
+          <span>⏰</span>
+          <span>You&apos;ve been coding for <strong>{sessionLabel}</strong> — time for a short break!</span>
+          <button
+            onClick={() => setBreakReminderDismissed(true)}
+            className="text-yellow-400 hover:text-yellow-200 ml-1 font-medium"
+          >
+            Snooze
+          </button>
         </div>
       )}
       {historyOpen && activeFile && (() => {
