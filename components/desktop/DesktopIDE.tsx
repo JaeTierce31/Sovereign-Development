@@ -21,6 +21,7 @@ import OutlinePanel, { parseSymbols } from "./OutlinePanel";
 import SymbolFinder from "./SymbolFinder";
 import TodoPanel from "./TodoPanel";
 import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
+import SnippetPicker, { SnippetManager, type Snippet, loadSnippets, saveSnippets } from "./SnippetPicker";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -621,6 +622,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false);
   const [tabSwitcherIndex, setTabSwitcherIndex] = useState(0);
   const [tabSwitcherList, setTabSwitcherList] = useState<string[]>([]);
+  const [snippetPickerOpen, setSnippetPickerOpen] = useState(false);
+  const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
+  const [userSnippets, setUserSnippets] = useState<Snippet[]>(() => (typeof window !== "undefined" ? loadSnippets() : []));
   const mruTabsRef = useRef<string[]>([]);
 
   const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
@@ -921,6 +925,9 @@ function IDECore({ projectId }: { projectId: string }) {
       localStorage.setItem(`peregrine:expanded:${projectId}`, JSON.stringify([...expandedFolders]));
     } catch {}
   }, [expandedFolders, projectId]);
+
+  // Persist user snippets to localStorage
+  useEffect(() => { saveSnippets(userSnippets); }, [userSnippets]);
 
   // Persist bookmarks to localStorage
   useEffect(() => {
@@ -1328,6 +1335,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "o" || e.key === "O")) {
         e.preventDefault();
         if (activeFileId) setSymbolFinderOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "j" || e.key === "J")) {
+        e.preventDefault();
+        if (activeFileId) setSnippetPickerOpen((v) => !v);
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSidebarOpen(true);
@@ -1369,6 +1379,8 @@ function IDECore({ projectId }: { projectId: string }) {
           return false;
         });
         else if (symbolFinderOpen) setSymbolFinderOpen(false);
+        else if (snippetPickerOpen) setSnippetPickerOpen(false);
+        else if (snippetManagerOpen) setSnippetManagerOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1385,7 +1397,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3355,6 +3367,31 @@ function IDECore({ projectId }: { projectId: string }) {
           openTabs={openTabs}
         />
       )}
+      {snippetPickerOpen && activeFileId && (
+        <SnippetPicker
+          language={activeFile?.language ?? null}
+          userSnippets={userSnippets}
+          onInsert={(body) => {
+            if (!editorInstanceRef.current) return;
+            type IRange = { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+            type Ed = { executeEdits: (s: string, e: { range: IRange; text: string; forceMoveMarkers: boolean }[]) => void; getSelection: () => IRange | null; focus: () => void };
+            const ed = editorInstanceRef.current as Ed;
+            const sel = ed.getSelection();
+            if (!sel) return;
+            ed.executeEdits("snippet", [{ range: sel, text: body, forceMoveMarkers: true }]);
+            ed.focus();
+          }}
+          onClose={() => setSnippetPickerOpen(false)}
+          onManage={() => { setSnippetPickerOpen(false); setSnippetManagerOpen(true); }}
+        />
+      )}
+      {snippetManagerOpen && (
+        <SnippetManager
+          userSnippets={userSnippets}
+          onChange={(next) => setUserSnippets(next)}
+          onClose={() => setSnippetManagerOpen(false)}
+        />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3388,6 +3425,8 @@ function IDECore({ projectId }: { projectId: string }) {
           }}
           commands={[
             { id: "go-to-symbol", label: "Go to Symbol in File", description: "⌘/Ctrl Shift O — jump to function, class, etc.", icon: "@", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSymbolFinderOpen(true); } },
+            { id: "insert-snippet", label: "Insert Snippet", description: "⌘/Ctrl Shift J — personal snippet library", icon: "✦", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSnippetPickerOpen(true); } },
+            { id: "manage-snippets", label: "Manage Snippets", description: "Create, edit, delete personal snippets", icon: "✦", action: () => { setCommandPaletteOpen(false); setSnippetManagerOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -3806,6 +3845,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl Shift O", "Go to symbol in file"],
+                ["⌘/Ctrl Shift J", "Insert snippet"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["Ctrl Tab / Shift Tab", "MRU tab switcher"],
