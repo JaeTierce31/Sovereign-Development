@@ -22,6 +22,7 @@ import SymbolFinder from "./SymbolFinder";
 import TodoPanel from "./TodoPanel";
 import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
 import SnippetPicker, { SnippetManager, type Snippet, loadSnippets, saveSnippets } from "./SnippetPicker";
+import ImportMap from "./ImportMap";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -628,6 +629,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [snippetPickerOpen, setSnippetPickerOpen] = useState(false);
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
   const [userSnippets, setUserSnippets] = useState<Snippet[]>(() => (typeof window !== "undefined" ? loadSnippets() : []));
+  const [importMapOpen, setImportMapOpen] = useState(false);
   const mruTabsRef = useRef<string[]>([]);
 
   const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
@@ -1349,6 +1351,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "j" || e.key === "J")) {
         e.preventDefault();
         if (activeFileId) setSnippetPickerOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "m" || e.key === "M")) {
+        e.preventDefault();
+        if (activeFileId) setImportMapOpen((v) => !v);
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSidebarOpen(true);
@@ -1392,6 +1397,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (symbolFinderOpen) setSymbolFinderOpen(false);
         else if (snippetPickerOpen) setSnippetPickerOpen(false);
         else if (snippetManagerOpen) setSnippetManagerOpen(false);
+        else if (importMapOpen) setImportMapOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1408,7 +1414,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3439,6 +3445,16 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setSnippetManagerOpen(false)}
         />
       )}
+      {importMapOpen && activeFile && !isImageFile && (
+        <ImportMap
+          content={activeFile.content ?? ""}
+          filePath={activeFile.path}
+          language={activeFile.language ?? null}
+          files={files}
+          onNavigate={(id) => { openFile(id); }}
+          onClose={() => setImportMapOpen(false)}
+        />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3474,6 +3490,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "go-to-symbol", label: "Go to Symbol in File", description: "⌘/Ctrl Shift O — jump to function, class, etc.", icon: "@", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSymbolFinderOpen(true); } },
             { id: "insert-snippet", label: "Insert Snippet", description: "⌘/Ctrl Shift J — personal snippet library", icon: "✦", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSnippetPickerOpen(true); } },
             { id: "manage-snippets", label: "Manage Snippets", description: "Create, edit, delete personal snippets", icon: "✦", action: () => { setCommandPaletteOpen(false); setSnippetManagerOpen(true); } },
+            { id: "show-import-map", label: "Show Import Map", description: "⌘/Ctrl Shift M — file dependencies", icon: "⇒", action: () => { setCommandPaletteOpen(false); if (activeFileId) setImportMapOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -3893,6 +3910,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl Shift O", "Go to symbol in file"],
                 ["⌘/Ctrl Shift J", "Insert snippet"],
+                ["⌘/Ctrl Shift M", "Show import map"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["Ctrl Tab / Shift Tab", "MRU tab switcher"],
