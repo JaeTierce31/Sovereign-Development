@@ -1800,6 +1800,14 @@ function IDECore({ projectId }: { projectId: string }) {
     ? (activeFile.content ?? "").includes("\r\n") ? "CRLF" : "LF"
     : null;
 
+  // Project health score 0-100: penalise errors, warnings, and dirty (unsaved) tabs
+  const healthScore = useMemo(() => {
+    const totalErrors = Object.values(fileProblems).reduce((s, p) => s + p.errors, 0);
+    const totalWarnings = Object.values(fileProblems).reduce((s, p) => s + p.warnings, 0);
+    const dirty = dirtyTabs.size;
+    return Math.max(0, Math.min(100, 100 - totalErrors * 20 - totalWarnings * 3 - dirty * 1));
+  }, [fileProblems, dirtyTabs]);
+
   async function toggleShare() {
     const next = !isPublic;
     const res = await fetch(`/api/projects/${projectId}/share`, {
@@ -2975,6 +2983,21 @@ function IDECore({ projectId }: { projectId: string }) {
                 </button>
               );
             })()}
+            {/* Project health score */}
+            {files.length > 0 && (
+              <button
+                onClick={() => setStatsOpen((v) => !v)}
+                className={`flex items-center gap-1 transition-colors font-mono tabular-nums ${
+                  healthScore >= 80 ? "text-green-400 hover:text-green-300"
+                  : healthScore >= 60 ? "text-yellow-400 hover:text-yellow-300"
+                  : "text-red-400 hover:text-red-300"
+                }`}
+                title={`Project health: ${healthScore}/100 (errors ×20, warnings ×3, unsaved ×1)`}
+              >
+                <span>{healthScore >= 80 ? "♥" : healthScore >= 60 ? "♡" : "♡"}</span>
+                <span>{healthScore}</span>
+              </button>
+            )}
             <button
               onClick={() => setStatsOpen((v) => !v)}
               className="hover:text-white transition-colors"
