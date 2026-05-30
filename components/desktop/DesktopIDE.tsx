@@ -1784,6 +1784,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const activeExt = (activeFile?.path.split(".").pop() ?? "").toLowerCase();
   const isRunnable = RUNNABLE_EXTS.has(activeExt);
   const isImageFile = IMAGE_EXTS.has(activeExt);
+  const lineEnding = activeFile && !isImageFile
+    ? (activeFile.content ?? "").includes("\r\n") ? "CRLF" : "LF"
+    : null;
 
   async function toggleShare() {
     const next = !isPublic;
@@ -3032,6 +3035,22 @@ function IDECore({ projectId }: { projectId: string }) {
           </div>
           <div className="flex items-center gap-3">
             <span>UTF-8</span>
+            {lineEnding && activeFile && (
+              <button
+                onClick={() => {
+                  const content = activeFile.content ?? "";
+                  const converted = lineEnding === "CRLF"
+                    ? content.replace(/\r\n/g, "\n")
+                    : content.replace(/\n/g, "\r\n");
+                  setFiles((prev) => prev.map((f) => f.id === activeFile.id ? { ...f, content: converted } : f));
+                  setDirtyTabs((prev) => new Set([...prev, activeFile.id]));
+                }}
+                className="hover:text-white transition-colors"
+                title={`Line endings: ${lineEnding} (click to convert to ${lineEnding === "CRLF" ? "LF" : "CRLF"})`}
+              >
+                {lineEnding}
+              </button>
+            )}
             {activeFile?.updatedAt && (
               <span title={new Date(activeFile.updatedAt).toLocaleString()}>
                 {timeAgo(activeFile.updatedAt)}
