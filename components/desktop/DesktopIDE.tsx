@@ -41,6 +41,7 @@ import JwtDecoder from "./JwtDecoder";
 import ColorContrastChecker from "./ColorContrastChecker";
 import AsciiTable from "./AsciiTable";
 import StringInspector from "./StringInspector";
+import HttpStatusCodes from "./HttpStatusCodes";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -665,6 +666,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [contrastCheckerOpen, setContrastCheckerOpen] = useState(false);
   const [asciiTableOpen, setAsciiTableOpen] = useState(false);
   const [stringInspectorOpen, setStringInspectorOpen] = useState(false);
+  const [httpStatusOpen, setHttpStatusOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1555,6 +1557,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === ";" || e.key === ":")) {
         e.preventDefault();
         setStringInspectorOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "`" || e.key === "~")) {
+        e.preventDefault();
+        setHttpStatusOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
@@ -1622,6 +1627,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (contrastCheckerOpen) setContrastCheckerOpen(false);
         else if (asciiTableOpen) setAsciiTableOpen(false);
         else if (stringInspectorOpen) setStringInspectorOpen(false);
+        else if (httpStatusOpen) setHttpStatusOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1638,7 +1644,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, hashCalcOpen, numberBaseOpen, mdTableOpen, jwtDecoderOpen, contrastCheckerOpen, asciiTableOpen, stringInspectorOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, hashCalcOpen, numberBaseOpen, mdTableOpen, jwtDecoderOpen, contrastCheckerOpen, asciiTableOpen, stringInspectorOpen, httpStatusOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3796,6 +3802,9 @@ function IDECore({ projectId }: { projectId: string }) {
       {stringInspectorOpen && (
         <StringInspector onClose={() => setStringInspectorOpen(false)} />
       )}
+      {httpStatusOpen && (
+        <HttpStatusCodes onClose={() => setHttpStatusOpen(false)} />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3851,6 +3860,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "contrast-checker", label: "Color Contrast Checker", description: "⌘/Ctrl Shift W — WCAG AA/AAA pass/fail + suggestions", icon: "◑", action: () => { setCommandPaletteOpen(false); setContrastCheckerOpen(true); } },
             { id: "ascii-table", label: "ASCII / Unicode Table", description: "⌘/Ctrl Shift \\ — browse codepoints, copy char/hex/escape", icon: "Ω", action: () => { setCommandPaletteOpen(false); setAsciiTableOpen(true); } },
             { id: "string-inspector", label: "String Inspector", description: "⌘/Ctrl Shift ; — stats, transforms, char frequency", icon: "Σ", action: () => { setCommandPaletteOpen(false); setStringInspectorOpen(true); } },
+            { id: "http-status-codes", label: "HTTP Status Codes", description: "⌘/Ctrl Shift ` — browse all 1xx–5xx codes with descriptions", icon: "≡", action: () => { setCommandPaletteOpen(false); setHttpStatusOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -4289,6 +4299,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift W", "Color contrast checker (WCAG AA/AAA)"],
                 ["⌘/Ctrl Shift \\", "ASCII / Unicode table (browse & copy codepoints)"],
                 ["⌘/Ctrl Shift ;", "String inspector (stats, transforms, frequency)"],
+                ["⌘/Ctrl Shift `", "HTTP status codes (1xx–5xx reference)"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
