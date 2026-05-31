@@ -38,6 +38,7 @@ import HashCalculator from "./HashCalculator";
 import NumberBaseConverter from "./NumberBaseConverter";
 import MarkdownTableGenerator from "./MarkdownTableGenerator";
 import JwtDecoder from "./JwtDecoder";
+import ColorContrastChecker from "./ColorContrastChecker";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -659,6 +660,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [numberBaseOpen, setNumberBaseOpen] = useState(false);
   const [mdTableOpen, setMdTableOpen] = useState(false);
   const [jwtDecoderOpen, setJwtDecoderOpen] = useState(false);
+  const [contrastCheckerOpen, setContrastCheckerOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1540,6 +1542,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "q" || e.key === "Q")) {
         e.preventDefault();
         setJwtDecoderOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "w" || e.key === "W")) {
+        e.preventDefault();
+        setContrastCheckerOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
@@ -1604,6 +1609,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (numberBaseOpen) setNumberBaseOpen(false);
         else if (mdTableOpen) setMdTableOpen(false);
         else if (jwtDecoderOpen) setJwtDecoderOpen(false);
+        else if (contrastCheckerOpen) setContrastCheckerOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1620,7 +1626,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, hashCalcOpen, numberBaseOpen, mdTableOpen, jwtDecoderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, hashCalcOpen, numberBaseOpen, mdTableOpen, jwtDecoderOpen, contrastCheckerOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3769,6 +3775,9 @@ function IDECore({ projectId }: { projectId: string }) {
       {jwtDecoderOpen && (
         <JwtDecoder onClose={() => setJwtDecoderOpen(false)} />
       )}
+      {contrastCheckerOpen && (
+        <ColorContrastChecker onClose={() => setContrastCheckerOpen(false)} />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3821,6 +3830,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "number-base", label: "Number Base Converter", description: "⌘/Ctrl Shift N — binary, octal, decimal, hex + custom base", icon: "₂", action: () => { setCommandPaletteOpen(false); setNumberBaseOpen(true); } },
             { id: "md-table", label: "Markdown Table Generator", description: "⌘/Ctrl Shift Y — build GFM tables, import from CSV", icon: "⊞", action: () => { setCommandPaletteOpen(false); setMdTableOpen(true); } },
             { id: "jwt-decoder", label: "JWT Decoder", description: "⌘/Ctrl Shift Q — decode header, payload, expiry", icon: "🔑", action: () => { setCommandPaletteOpen(false); setJwtDecoderOpen(true); } },
+            { id: "contrast-checker", label: "Color Contrast Checker", description: "⌘/Ctrl Shift W — WCAG AA/AAA pass/fail + suggestions", icon: "◑", action: () => { setCommandPaletteOpen(false); setContrastCheckerOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -4256,6 +4266,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift N", "Number base converter (bin/oct/dec/hex)"],
                 ["⌘/Ctrl Shift Y", "Markdown table generator (GFM, CSV import)"],
                 ["⌘/Ctrl Shift Q", "JWT decoder (header, payload, expiry)"],
+                ["⌘/Ctrl Shift W", "Color contrast checker (WCAG AA/AAA)"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
