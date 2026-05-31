@@ -26,6 +26,7 @@ import ImportMap from "./ImportMap";
 import ScratchNotes from "./ScratchNotes";
 import ColorSwatchPanel from "./ColorSwatchPanel";
 import RegexTester from "./RegexTester";
+import JsonTools from "./JsonTools";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -635,6 +636,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [importMapOpen, setImportMapOpen] = useState(false);
   const [colorSwatchOpen, setColorSwatchOpen] = useState(false);
   const [regexTesterOpen, setRegexTesterOpen] = useState(false);
+  const [jsonToolsOpen, setJsonToolsOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1486,6 +1488,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
+      } else if (mod && e.shiftKey && (e.key === "x" || e.key === "X")) {
+        e.preventDefault();
+        setJsonToolsOpen((v) => !v);
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSidebarOpen(true);
@@ -1532,6 +1537,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (importMapOpen) setImportMapOpen(false);
         else if (colorSwatchOpen) setColorSwatchOpen(false);
         else if (regexTesterOpen) setRegexTesterOpen(false);
+        else if (jsonToolsOpen) setJsonToolsOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1548,7 +1554,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3655,6 +3661,12 @@ function IDECore({ projectId }: { projectId: string }) {
       {regexTesterOpen && (
         <RegexTester onClose={() => setRegexTesterOpen(false)} />
       )}
+      {jsonToolsOpen && (
+        <JsonTools
+          initialContent={activeFile && !isImageFile ? (activeFile.content ?? null) : null}
+          onClose={() => setJsonToolsOpen(false)}
+        />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3693,6 +3705,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "manage-snippets", label: "Manage Snippets", description: "Create, edit, delete personal snippets", icon: "✦", action: () => { setCommandPaletteOpen(false); setSnippetManagerOpen(true); } },
             { id: "show-import-map", label: "Show Import Map", description: "⌘/Ctrl Shift M — file dependencies", icon: "⇒", action: () => { setCommandPaletteOpen(false); if (activeFileId) setImportMapOpen(true); } },
             { id: "color-swatches", label: "Show Color Swatches", description: "⌘/Ctrl Shift C — hex/rgb/hsl colors in file", icon: "🎨", action: () => { setCommandPaletteOpen(false); if (activeFileId) setColorSwatchOpen(true); } },
+            { id: "json-tools", label: "JSON Tools", description: "⌘/Ctrl Shift X — format, minify, sort keys, validate", icon: "{}", action: () => { setCommandPaletteOpen(false); setJsonToolsOpen(true); } },
             { id: "pomodoro-start", label: pomodoroPhase !== "idle" ? "Stop Pomodoro Timer" : "Start Pomodoro Timer", description: "25 min focus / 5 min break cycle", icon: "🍅", action: () => { setCommandPaletteOpen(false); pomodoroPhase !== "idle" ? stopPomodoro() : startPomodoro(); } },
             { id: "regex-tester", label: "Open Regex Tester", description: "⌘/Ctrl Shift R — test regex patterns live", icon: ".*", action: () => { setCommandPaletteOpen(false); setRegexTesterOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
@@ -4118,6 +4131,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift M", "Show import map"],
                 ["⌘/Ctrl Shift C", "Color swatches panel"],
                 ["⌘/Ctrl Shift R", "Regex tester"],
+                ["⌘/Ctrl Shift X", "JSON tools (format/minify/validate)"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
