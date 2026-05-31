@@ -630,6 +630,9 @@ function IDECore({ projectId }: { projectId: string }) {
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
   const [userSnippets, setUserSnippets] = useState<Snippet[]>(() => (typeof window !== "undefined" ? loadSnippets() : []));
   const [importMapOpen, setImportMapOpen] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
   const mruTabsRef = useRef<string[]>([]);
 
   const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
@@ -1210,6 +1213,60 @@ function IDECore({ projectId }: { projectId: string }) {
     document.head.appendChild(link);
   }, [prefs.fontFamily]);
 
+  const toggleVoice = useCallback(() => {
+    if (voiceActive) {
+      voiceRecogRef.current?.stop();
+      voiceRecogRef.current = null;
+      setVoiceActive(false);
+      setVoiceTranscript("");
+      return;
+    }
+    type SR = { new(): SpeechRecognitionInstance };
+    interface SpeechRecognitionInstance {
+      continuous: boolean; interimResults: boolean; lang: string;
+      onresult: ((e: { results: { [n: number]: { [n: number]: { transcript: string }; isFinal: boolean } }; resultIndex: number }) => void) | null;
+      onerror: ((e: { error: string }) => void) | null;
+      onend: (() => void) | null;
+      start: () => void; stop: () => void;
+    }
+    const win = window as Window & { SpeechRecognition?: SR; webkitSpeechRecognition?: SR };
+    const SpeechRecognitionClass = win.SpeechRecognition ?? win.webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) {
+      alert("Voice dictation requires a browser that supports the Web Speech API (Chrome/Edge recommended).");
+      return;
+    }
+    const recog = new SpeechRecognitionClass();
+    recog.continuous = true;
+    recog.interimResults = true;
+    recog.lang = "en-US";
+    recog.onresult = (e) => {
+      let interim = "";
+      let final = "";
+      for (let i = e.resultIndex; i < Object.keys(e.results).length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) final += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      setVoiceTranscript(interim);
+      if (final && editorInstanceRef.current) {
+        type IRange = { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+        type Ed = { executeEdits: (s: string, e: { range: IRange; text: string; forceMoveMarkers: boolean }[]) => void; getSelection: () => IRange | null; focus: () => void };
+        const ed = editorInstanceRef.current as Ed;
+        const sel = ed.getSelection();
+        if (sel) {
+          ed.executeEdits("voice", [{ range: sel, text: final, forceMoveMarkers: true }]);
+          ed.focus();
+        }
+        setVoiceTranscript("");
+      }
+    };
+    recog.onerror = () => { setVoiceActive(false); setVoiceTranscript(""); };
+    recog.onend = () => { setVoiceActive(false); setVoiceTranscript(""); };
+    recog.start();
+    voiceRecogRef.current = recog;
+    setVoiceActive(true);
+  }, [voiceActive, editorInstanceRef]);
+
   // Global keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -1354,6 +1411,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "m" || e.key === "M")) {
         e.preventDefault();
         if (activeFileId) setImportMapOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
+        e.preventDefault();
+        if (activeFileId) toggleVoice();
       } else if (mod && e.shiftKey && e.key === "f") {
         e.preventDefault();
         setSidebarOpen(true);
@@ -1414,7 +1474,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -2606,6 +2666,20 @@ function IDECore({ projectId }: { projectId: string }) {
                 ± Diff
               </button>
             )}
+            {activeFileId && (
+              <button
+                onClick={toggleVoice}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1 ${
+                  voiceActive
+                    ? "bg-red-600/30 text-red-300 border border-red-700/50 animate-pulse"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title={voiceActive ? "Stop voice dictation (⌘/Ctrl Shift V)" : "Voice dictation (⌘/Ctrl Shift V)"}
+              >
+                <span>{voiceActive ? "◉" : "🎤"}</span>
+                {voiceActive ? "Stop" : "Voice"}
+              </button>
+            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
@@ -3488,6 +3562,7 @@ function IDECore({ projectId }: { projectId: string }) {
           }}
           commands={[
             { id: "go-to-symbol", label: "Go to Symbol in File", description: "⌘/Ctrl Shift O — jump to function, class, etc.", icon: "@", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSymbolFinderOpen(true); } },
+            { id: "voice-dictation", label: voiceActive ? "Stop Voice Dictation" : "Start Voice Dictation", description: "⌘/Ctrl Shift V — speak to insert code", icon: "🎤", action: () => { setCommandPaletteOpen(false); if (activeFileId) toggleVoice(); } },
             { id: "insert-snippet", label: "Insert Snippet", description: "⌘/Ctrl Shift J — personal snippet library", icon: "✦", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSnippetPickerOpen(true); } },
             { id: "manage-snippets", label: "Manage Snippets", description: "Create, edit, delete personal snippets", icon: "✦", action: () => { setCommandPaletteOpen(false); setSnippetManagerOpen(true); } },
             { id: "show-import-map", label: "Show Import Map", description: "⌘/Ctrl Shift M — file dependencies", icon: "⇒", action: () => { setCommandPaletteOpen(false); if (activeFileId) setImportMapOpen(true); } },
@@ -3909,6 +3984,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl G", "Go to line"],
                 ["⌘/Ctrl Shift F", "Search across files"],
                 ["⌘/Ctrl Shift O", "Go to symbol in file"],
+                ["⌘/Ctrl Shift V", "Voice dictation"],
                 ["⌘/Ctrl Shift J", "Insert snippet"],
                 ["⌘/Ctrl Shift M", "Show import map"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
@@ -3981,6 +4057,15 @@ function IDECore({ projectId }: { projectId: string }) {
           >
             Snooze
           </button>
+        </div>
+      )}
+      {voiceActive && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-3 bg-red-900/90 border border-red-600/50 rounded-xl shadow-xl text-sm text-red-100 z-50 backdrop-blur-sm max-w-md">
+          <span className="animate-pulse shrink-0">◉</span>
+          <span className="truncate flex-1">
+            {voiceTranscript ? voiceTranscript : "Listening… speak to insert text at cursor"}
+          </span>
+          <button onClick={toggleVoice} className="text-red-400 hover:text-red-200 shrink-0">Stop</button>
         </div>
       )}
       {historyOpen && activeFile && (() => {
