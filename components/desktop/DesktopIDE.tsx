@@ -43,6 +43,7 @@ import AsciiTable from "./AsciiTable";
 import StringInspector from "./StringInspector";
 import HttpStatusCodes from "./HttpStatusCodes";
 import UuidGenerator from "./UuidGenerator";
+import PasswordGenerator from "./PasswordGenerator";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -669,6 +670,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [stringInspectorOpen, setStringInspectorOpen] = useState(false);
   const [httpStatusOpen, setHttpStatusOpen] = useState(false);
   const [uuidGeneratorOpen, setUuidGeneratorOpen] = useState(false);
+  const [passwordGenOpen, setPasswordGenOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1565,6 +1567,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "'" || e.key === '"')) {
         e.preventDefault();
         setUuidGeneratorOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "." || e.key === ">")) {
+        e.preventDefault();
+        setPasswordGenOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
@@ -1634,6 +1639,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (stringInspectorOpen) setStringInspectorOpen(false);
         else if (httpStatusOpen) setHttpStatusOpen(false);
         else if (uuidGeneratorOpen) setUuidGeneratorOpen(false);
+        else if (passwordGenOpen) setPasswordGenOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1650,7 +1656,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, hashCalcOpen, numberBaseOpen, mdTableOpen, jwtDecoderOpen, contrastCheckerOpen, asciiTableOpen, stringInspectorOpen, httpStatusOpen, uuidGeneratorOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, hashCalcOpen, numberBaseOpen, mdTableOpen, jwtDecoderOpen, contrastCheckerOpen, asciiTableOpen, stringInspectorOpen, httpStatusOpen, uuidGeneratorOpen, passwordGenOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3814,6 +3820,9 @@ function IDECore({ projectId }: { projectId: string }) {
       {uuidGeneratorOpen && (
         <UuidGenerator onClose={() => setUuidGeneratorOpen(false)} />
       )}
+      {passwordGenOpen && (
+        <PasswordGenerator onClose={() => setPasswordGenOpen(false)} />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3871,6 +3880,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "string-inspector", label: "String Inspector", description: "⌘/Ctrl Shift ; — stats, transforms, char frequency", icon: "Σ", action: () => { setCommandPaletteOpen(false); setStringInspectorOpen(true); } },
             { id: "http-status-codes", label: "HTTP Status Codes", description: "⌘/Ctrl Shift ` — browse all 1xx–5xx codes with descriptions", icon: "≡", action: () => { setCommandPaletteOpen(false); setHttpStatusOpen(true); } },
             { id: "uuid-generator", label: "UUID Generator", description: "⌘/Ctrl Shift ' — generate v4/v7/v1 UUIDs, inspect, bulk", icon: "⊕", action: () => { setCommandPaletteOpen(false); setUuidGeneratorOpen(true); } },
+            { id: "password-generator", label: "Password Generator", description: "⌘/Ctrl Shift . — secure passwords, entropy meter, bulk", icon: "🔒", action: () => { setCommandPaletteOpen(false); setPasswordGenOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -4311,6 +4321,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift ;", "String inspector (stats, transforms, frequency)"],
                 ["⌘/Ctrl Shift `", "HTTP status codes (1xx–5xx reference)"],
                 ["⌘/Ctrl Shift '", "UUID generator (v4/v7/v1, bulk, inspect)"],
+                ["⌘/Ctrl Shift .", "Password generator (entropy meter, bulk)"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
