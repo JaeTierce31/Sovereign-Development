@@ -633,6 +633,13 @@ function IDECore({ projectId }: { projectId: string }) {
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
+
+  // Pomodoro timer
+  type PomodoroPhase = "focus" | "short-break" | "long-break" | "idle";
+  const [pomodoroPhase, setPomodoroPhase] = useState<PomodoroPhase>("idle");
+  const [pomodoroSecondsLeft, setPomodoroSecondsLeft] = useState(25 * 60);
+  const [pomodoroRound, setPomodoroRound] = useState(0);
+  const pomodoroIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mruTabsRef = useRef<string[]>([]);
 
   const [recentFileIds, setRecentFileIds] = useState<string[]>(() => {
@@ -944,6 +951,60 @@ function IDECore({ projectId }: { projectId: string }) {
     }, 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Pomodoro tick
+  useEffect(() => {
+    if (pomodoroPhase === "idle") {
+      if (pomodoroIntervalRef.current) { clearInterval(pomodoroIntervalRef.current); pomodoroIntervalRef.current = null; }
+      return;
+    }
+    pomodoroIntervalRef.current = setInterval(() => {
+      setPomodoroSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(pomodoroIntervalRef.current!);
+          pomodoroIntervalRef.current = null;
+          setPomodoroPhase((phase) => {
+            const nextRound = phase === "focus" ? pomodoroRound + 1 : pomodoroRound;
+            if (phase === "focus") {
+              const isLong = nextRound % 4 === 0;
+              setPomodoroRound(nextRound);
+              const msg = isLong ? "Long break! (15 min)" : "Short break! (5 min)";
+              if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+                new Notification("Pomodoro", { body: msg });
+              }
+              const secs = isLong ? 15 * 60 : 5 * 60;
+              setPomodoroSecondsLeft(secs);
+              return isLong ? "long-break" : "short-break";
+            } else {
+              if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+                new Notification("Pomodoro", { body: "Focus time! (25 min)" });
+              }
+              setPomodoroSecondsLeft(25 * 60);
+              return "focus";
+            }
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (pomodoroIntervalRef.current) clearInterval(pomodoroIntervalRef.current); };
+  }, [pomodoroPhase, pomodoroRound]);
+
+  function startPomodoro() {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    setPomodoroRound(0);
+    setPomodoroSecondsLeft(25 * 60);
+    setPomodoroPhase("focus");
+  }
+
+  function stopPomodoro() {
+    setPomodoroPhase("idle");
+    setPomodoroSecondsLeft(25 * 60);
+    setPomodoroRound(0);
+  }
 
   // Persist bookmarks to localStorage
   useEffect(() => {
@@ -1889,6 +1950,11 @@ function IDECore({ projectId }: { projectId: string }) {
     ? `${sessionMinutes}m`
     : `${Math.floor(sessionMinutes / 60)}h ${sessionMinutes % 60}m`;
   const showBreakReminder = sessionMinutes >= 90 && !breakReminderDismissed;
+
+  const pomodoroMinutes = Math.floor(pomodoroSecondsLeft / 60);
+  const pomodoroSeconds = pomodoroSecondsLeft % 60;
+  const pomodoroLabel = `${String(pomodoroMinutes).padStart(2, "0")}:${String(pomodoroSeconds).padStart(2, "0")}`;
+  const pomodoroPhaseLabel = pomodoroPhase === "focus" ? "Focus" : pomodoroPhase === "short-break" ? "Break" : "Long Break";
 
   async function toggleShare() {
     const next = !isPublic;
@@ -3270,6 +3336,27 @@ function IDECore({ projectId }: { projectId: string }) {
                 {showBreakReminder ? "⏰" : "⏱"} {sessionLabel}
               </span>
             )}
+            {pomodoroPhase !== "idle" ? (
+              <button
+                onClick={stopPomodoro}
+                className={`tabular-nums font-mono text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                  pomodoroPhase === "focus"
+                    ? "bg-red-900/40 text-red-400 hover:bg-red-900/60"
+                    : "bg-green-900/40 text-green-400 hover:bg-green-900/60"
+                }`}
+                title={`Pomodoro ${pomodoroPhaseLabel} — round ${pomodoroRound + 1}. Click to stop.`}
+              >
+                🍅 {pomodoroPhaseLabel} {pomodoroLabel}
+              </button>
+            ) : (
+              <button
+                onClick={startPomodoro}
+                className="text-gray-600 hover:text-gray-400 transition-colors"
+                title="Start Pomodoro (25 min focus)"
+              >
+                🍅
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -3566,6 +3653,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "insert-snippet", label: "Insert Snippet", description: "⌘/Ctrl Shift J — personal snippet library", icon: "✦", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSnippetPickerOpen(true); } },
             { id: "manage-snippets", label: "Manage Snippets", description: "Create, edit, delete personal snippets", icon: "✦", action: () => { setCommandPaletteOpen(false); setSnippetManagerOpen(true); } },
             { id: "show-import-map", label: "Show Import Map", description: "⌘/Ctrl Shift M — file dependencies", icon: "⇒", action: () => { setCommandPaletteOpen(false); if (activeFileId) setImportMapOpen(true); } },
+            { id: "pomodoro-start", label: pomodoroPhase !== "idle" ? "Stop Pomodoro Timer" : "Start Pomodoro Timer", description: "25 min focus / 5 min break cycle", icon: "🍅", action: () => { setCommandPaletteOpen(false); pomodoroPhase !== "idle" ? stopPomodoro() : startPomodoro(); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -3987,6 +4075,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift V", "Voice dictation"],
                 ["⌘/Ctrl Shift J", "Insert snippet"],
                 ["⌘/Ctrl Shift M", "Show import map"],
+                ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
                 ["Ctrl Tab / Shift Tab", "MRU tab switcher"],
