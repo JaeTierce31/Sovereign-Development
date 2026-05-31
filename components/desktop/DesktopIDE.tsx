@@ -24,6 +24,7 @@ import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
 import SnippetPicker, { SnippetManager, type Snippet, loadSnippets, saveSnippets } from "./SnippetPicker";
 import ImportMap from "./ImportMap";
 import ScratchNotes from "./ScratchNotes";
+import ColorSwatchPanel from "./ColorSwatchPanel";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -631,6 +632,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [snippetManagerOpen, setSnippetManagerOpen] = useState(false);
   const [userSnippets, setUserSnippets] = useState<Snippet[]>(() => (typeof window !== "undefined" ? loadSnippets() : []));
   const [importMapOpen, setImportMapOpen] = useState(false);
+  const [colorSwatchOpen, setColorSwatchOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1473,6 +1475,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "m" || e.key === "M")) {
         e.preventDefault();
         if (activeFileId) setImportMapOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        if (activeFileId) setColorSwatchOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
@@ -1520,6 +1525,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (snippetPickerOpen) setSnippetPickerOpen(false);
         else if (snippetManagerOpen) setSnippetManagerOpen(false);
         else if (importMapOpen) setImportMapOpen(false);
+        else if (colorSwatchOpen) setColorSwatchOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1536,7 +1542,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -2750,6 +2756,19 @@ function IDECore({ projectId }: { projectId: string }) {
                 {voiceActive ? "Stop" : "Voice"}
               </button>
             )}
+            {activeFileId && !isImageFile && (
+              <button
+                onClick={() => setColorSwatchOpen((v) => !v)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors flex items-center gap-1 ${
+                  colorSwatchOpen
+                    ? "bg-purple-600/30 text-purple-300 border border-purple-700/50"
+                    : "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+                }`}
+                title="Color swatches (⌘/Ctrl Shift C)"
+              >
+                🎨
+              </button>
+            )}
             <button
               onClick={() => setAiOpen((v) => !v)}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
@@ -3620,6 +3639,13 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setImportMapOpen(false)}
         />
       )}
+      {colorSwatchOpen && activeFile && !isImageFile && (
+        <ColorSwatchPanel
+          content={activeFile.content ?? null}
+          filePath={activeFile.path}
+          onClose={() => setColorSwatchOpen(false)}
+        />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3657,6 +3683,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "insert-snippet", label: "Insert Snippet", description: "⌘/Ctrl Shift J — personal snippet library", icon: "✦", action: () => { setCommandPaletteOpen(false); if (activeFileId) setSnippetPickerOpen(true); } },
             { id: "manage-snippets", label: "Manage Snippets", description: "Create, edit, delete personal snippets", icon: "✦", action: () => { setCommandPaletteOpen(false); setSnippetManagerOpen(true); } },
             { id: "show-import-map", label: "Show Import Map", description: "⌘/Ctrl Shift M — file dependencies", icon: "⇒", action: () => { setCommandPaletteOpen(false); if (activeFileId) setImportMapOpen(true); } },
+            { id: "color-swatches", label: "Show Color Swatches", description: "⌘/Ctrl Shift C — hex/rgb/hsl colors in file", icon: "🎨", action: () => { setCommandPaletteOpen(false); if (activeFileId) setColorSwatchOpen(true); } },
             { id: "pomodoro-start", label: pomodoroPhase !== "idle" ? "Stop Pomodoro Timer" : "Start Pomodoro Timer", description: "25 min focus / 5 min break cycle", icon: "🍅", action: () => { setCommandPaletteOpen(false); pomodoroPhase !== "idle" ? stopPomodoro() : startPomodoro(); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
@@ -4079,6 +4106,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift V", "Voice dictation"],
                 ["⌘/Ctrl Shift J", "Insert snippet"],
                 ["⌘/Ctrl Shift M", "Show import map"],
+                ["⌘/Ctrl Shift C", "Color swatches panel"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
