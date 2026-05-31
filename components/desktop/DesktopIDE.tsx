@@ -23,6 +23,7 @@ import TodoPanel from "./TodoPanel";
 import BookmarkPanel, { type BookmarkEntry } from "./BookmarkPanel";
 import SnippetPicker, { SnippetManager, type Snippet, loadSnippets, saveSnippets } from "./SnippetPicker";
 import ImportMap from "./ImportMap";
+import ScratchNotes from "./ScratchNotes";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -516,7 +517,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline" | "todo" | "bookmarks">("explorer");
+  const [sidebarTab, setSidebarTab] = useState<"explorer" | "search" | "outline" | "todo" | "bookmarks" | "notes">("explorer");
   const pendingJumpRef = useRef<{ fileId: string; line: number; col?: number; colEnd?: number } | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
     if (typeof window === "undefined") return [];
@@ -2141,6 +2142,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "outline",  title: "Outline — symbols in current file", icon: <path d="M4 6h16M4 12h10M4 18h7" strokeLinecap="round" />, badge: 0 },
             { id: "todo",     title: "TODO / FIXME comments across all files", icon: <><path d="M9 11l3 3L22 4" strokeLinecap="round" strokeLinejoin="round" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" strokeLinecap="round" /></>, badge: todoCount },
             { id: "bookmarks",title: "Bookmarks (⌘/Ctrl Shift B to add)", icon: <><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></>, badge: bookmarks.length },
+            { id: "notes",    title: "Scratch Notes — per-project notepad", icon: <><path d="M11 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-5" strokeLinecap="round" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" strokeLinecap="round" strokeLinejoin="round" /></>, badge: 0 },
           ] as const).map(({ id, title, icon, badge }) => (
             <button
               key={id}
@@ -2431,7 +2433,7 @@ function IDECore({ projectId }: { projectId: string }) {
               }
             }}
           />
-        ) : (
+        ) : sidebarTab === "bookmarks" ? (
           <BookmarkPanel
             bookmarks={bookmarks}
             onSelect={(fileId, line) => {
@@ -2450,6 +2452,8 @@ function IDECore({ projectId }: { projectId: string }) {
             onRemove={(id) => setBookmarks((prev) => prev.filter((b) => b.id !== id))}
             onLabelChange={(id, label) => setBookmarks((prev) => prev.map((b) => b.id === id ? { ...b, label } : b))}
           />
+        ) : (
+          <ScratchNotes projectId={projectId} />
         )}
         {/* Drag handle */}
         <div
