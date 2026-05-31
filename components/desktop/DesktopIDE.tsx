@@ -33,6 +33,7 @@ import CronExplainer from "./CronExplainer";
 import TimestampConverter from "./TimestampConverter";
 import UnitConverter from "./UnitConverter";
 import ColorPickerPanel from "./ColorPicker";
+import LoremGenerator from "./LoremGenerator";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -649,6 +650,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [timestampOpen, setTimestampOpen] = useState(false);
   const [unitConverterOpen, setUnitConverterOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [loremOpen, setLoremOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1515,6 +1517,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault();
         setColorPickerOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "l" || e.key === "L")) {
+        e.preventDefault();
+        setLoremOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
@@ -1574,6 +1579,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (timestampOpen) setTimestampOpen(false);
         else if (unitConverterOpen) setUnitConverterOpen(false);
         else if (colorPickerOpen) setColorPickerOpen(false);
+        else if (loremOpen) setLoremOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1590,7 +1596,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, cronOpen, timestampOpen, unitConverterOpen, colorPickerOpen, loremOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3724,6 +3730,9 @@ function IDECore({ projectId }: { projectId: string }) {
       {colorPickerOpen && (
         <ColorPickerPanel onClose={() => setColorPickerOpen(false)} />
       )}
+      {loremOpen && (
+        <LoremGenerator onClose={() => setLoremOpen(false)} />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3771,6 +3780,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "timestamp-converter", label: "Timestamp Converter", description: "⌘/Ctrl Shift I — epoch ↔ date, ISO, UTC, relative", icon: "⏰", action: () => { setCommandPaletteOpen(false); setTimestampOpen(true); } },
             { id: "unit-converter", label: "Unit Converter", description: "⌘/Ctrl Shift U — length, mass, temp, data, time, speed, area", icon: "↔", action: () => { setCommandPaletteOpen(false); setUnitConverterOpen(true); } },
             { id: "color-picker", label: "Color Picker", description: "⌘/Ctrl Shift P — pick, convert, and copy hex/rgb/hsl + WCAG contrast", icon: "🎨", action: () => { setCommandPaletteOpen(false); setColorPickerOpen(true); } },
+            { id: "lorem-generator", label: "Lorem Ipsum Generator", description: "⌘/Ctrl Shift L — generate placeholder text (paragraphs, sentences, words)", icon: "¶", action: () => { setCommandPaletteOpen(false); setLoremOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -4201,6 +4211,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift I", "Timestamp/epoch converter"],
                 ["⌘/Ctrl Shift U", "Unit converter (length, mass, temp…)"],
                 ["⌘/Ctrl Shift P", "Color picker (hex/rgb/hsl + WCAG)"],
+                ["⌘/Ctrl Shift L", "Lorem ipsum / placeholder text generator"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
