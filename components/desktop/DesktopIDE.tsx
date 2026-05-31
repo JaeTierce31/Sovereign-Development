@@ -28,6 +28,7 @@ import ColorSwatchPanel from "./ColorSwatchPanel";
 import RegexTester from "./RegexTester";
 import JsonTools from "./JsonTools";
 import EncoderPanel from "./EncoderPanel";
+import DiffChecker from "./DiffChecker";
 import FileIcon from "./FileIcon";
 import { timeAgo } from "@/lib/timeAgo";
 
@@ -639,6 +640,7 @@ function IDECore({ projectId }: { projectId: string }) {
   const [regexTesterOpen, setRegexTesterOpen] = useState(false);
   const [jsonToolsOpen, setJsonToolsOpen] = useState(false);
   const [encoderOpen, setEncoderOpen] = useState(false);
+  const [diffCheckerOpen, setDiffCheckerOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const voiceRecogRef = useRef<{ stop: () => void } | null>(null);
@@ -1490,6 +1492,9 @@ function IDECore({ projectId }: { projectId: string }) {
       } else if (mod && e.shiftKey && (e.key === "e" || e.key === "E")) {
         e.preventDefault();
         setEncoderOpen((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        setDiffCheckerOpen((v) => !v);
       } else if (mod && e.shiftKey && (e.key === "v" || e.key === "V")) {
         e.preventDefault();
         if (activeFileId) toggleVoice();
@@ -1544,6 +1549,7 @@ function IDECore({ projectId }: { projectId: string }) {
         else if (regexTesterOpen) setRegexTesterOpen(false);
         else if (jsonToolsOpen) setJsonToolsOpen(false);
         else if (encoderOpen) setEncoderOpen(false);
+        else if (diffCheckerOpen) setDiffCheckerOpen(false);
         else if (prefsOpen) setPrefsOpen(false);
         else if (searchOpen) setSearchOpen(false);
         else if (finderOpen) setFinderOpen(false);
@@ -1560,7 +1566,7 @@ function IDECore({ projectId }: { projectId: string }) {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
+  }, [projectId, finderOpen, symbolFinderOpen, snippetPickerOpen, snippetManagerOpen, importMapOpen, colorSwatchOpen, regexTesterOpen, jsonToolsOpen, encoderOpen, diffCheckerOpen, aiOpen, termOpen, shortcutsOpen, searchOpen, prefsOpen, activeFileId, inlineAiOpen, gotoLineOpen, cursorPos.line, tabContextMenu, openFile, pinnedTabs, splitFileId, breadcrumbPopover, commandPaletteOpen, zenMode, sidebarOpen, langPickerOpen, importUrlOpen, toggleBookmark, revealActiveFile, tabSwitcherOpen, toggleVoice]);
 
   const activeFile = files.find((f) => f.id === activeFileId) ?? null;
 
@@ -3679,6 +3685,9 @@ function IDECore({ projectId }: { projectId: string }) {
           onClose={() => setEncoderOpen(false)}
         />
       )}
+      {diffCheckerOpen && (
+        <DiffChecker onClose={() => setDiffCheckerOpen(false)} />
+      )}
       {symbolFinderOpen && activeFile && !activeFile.path.match(/\.(png|jpg|jpeg|gif|webp|ico|bmp|svg)$/i) && (
         <SymbolFinder
           content={activeFile.content ?? ""}
@@ -3721,6 +3730,7 @@ function IDECore({ projectId }: { projectId: string }) {
             { id: "pomodoro-start", label: pomodoroPhase !== "idle" ? "Stop Pomodoro Timer" : "Start Pomodoro Timer", description: "25 min focus / 5 min break cycle", icon: "🍅", action: () => { setCommandPaletteOpen(false); pomodoroPhase !== "idle" ? stopPomodoro() : startPomodoro(); } },
             { id: "regex-tester", label: "Open Regex Tester", description: "⌘/Ctrl Shift R — test regex patterns live", icon: ".*", action: () => { setCommandPaletteOpen(false); setRegexTesterOpen(true); } },
             { id: "encoder-decoder", label: "Encoder / Decoder", description: "⌘/Ctrl Shift E — Base64, URL, HTML, Hex, JWT", icon: "⇄", action: () => { setCommandPaletteOpen(false); setEncoderOpen(true); } },
+            { id: "diff-checker", label: "Diff Checker", description: "⌘/Ctrl Shift D — compare two text blocks line by line", icon: "±", action: () => { setCommandPaletteOpen(false); setDiffCheckerOpen(true); } },
             { id: "reveal-in-explorer", label: "Reveal Active File in Explorer", description: "Focus file in sidebar tree", icon: "⊕", action: () => { revealActiveFile(); setCommandPaletteOpen(false); } },
             { id: "go-back", label: "Go Back", description: "Navigate to previous location", icon: "←", action: goBackInHistory },
             { id: "go-forward", label: "Go Forward", description: "Navigate to next location", icon: "→", action: goForwardInHistory },
@@ -4146,6 +4156,7 @@ function IDECore({ projectId }: { projectId: string }) {
                 ["⌘/Ctrl Shift R", "Regex tester"],
                 ["⌘/Ctrl Shift X", "JSON tools (format/minify/validate)"],
                 ["⌘/Ctrl Shift E", "Encoder/decoder (Base64, URL, JWT…)"],
+                ["⌘/Ctrl Shift D", "Diff checker (compare two text blocks)"],
                 ["🍅 Status bar", "Start/stop Pomodoro timer"],
                 ["Alt+Shift+E", "Reveal file in Explorer"],
                 ["⌘/Ctrl W", "Close current tab"],
