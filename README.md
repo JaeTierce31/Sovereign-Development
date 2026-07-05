@@ -3,6 +3,13 @@
 > **Code at the speed of flight.**  
 > The mobile‑first, edge‑native collaborative cloud IDE.
 
+> **Sovereign Ecosystem notice:** Peregrine is the developer platform of the
+> [Sovereign Ecosystem](https://github.com/JaeTierce31/Sovereign-Dominion/blob/main/docs/ECOSYSTEM.md)
+> and this repository is being consolidated into
+> [Sovereign-Development](https://github.com/JaeTierce31/Sovereign-Development),
+> its permanent home. Until that cutover, this repo remains the source of truth —
+> see [`ECOSYSTEM.md`](ECOSYSTEM.md).
+
 Peregrine lets you write, run, and deploy full‑stack apps from any device – phone, tablet, or desktop – with zero configuration. It combines a gesture‑driven mobile editor, instant in‑browser execution (WebContainers), real‑time collaboration, on‑device AI, and one‑click deployment to the global edge.
 
 ## 🚀 Try it now
