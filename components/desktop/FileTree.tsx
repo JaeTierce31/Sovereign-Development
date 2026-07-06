@@ -1,0 +1,735 @@
+"use client";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { timeAgo } from "@/lib/timeAgo";
+import FileIcon from "./FileIcon";
+
+export interface ProjectFile {
+  id: string;
+  path: string;
+  content: string | null;
+  language: string | null;
+  updatedAt?: number | null;
+}
+
+type DragPayload =
+  | { type: "file"; fileId: string; filePath: string }
+  | { type: "folder"; folderPath: string };
+
+const DRAG_TYPE = "application/peregrine-drag";
+
+interface TreeNode {
+  type: "file" | "folder";
+  name: string;
+  fullPath: string;
+  file?: ProjectFile;
+  children: TreeNode[];
+}
+
+function getStem(filename: string): string {
+  if (filename.startsWith(".")) {
+    const second = filename.indexOf(".", 1);
+    return second === -1 ? filename : filename.slice(0, second);
+  }
+  const first = filename.indexOf(".");
+  return first === -1 ? filename : filename.slice(0, first);
+}
+
+function applyNesting(nodes: TreeNode[]): void {
+  for (const node of nodes) {
+    if (node.type !== "folder") continue;
+    applyNesting(node.children);
+    const fileKids = node.children.filter((n) => n.type === "file");
+    const stemMap = new Map<string, TreeNode[]>();
+    for (const kid of fileKids) {
+      const s = getStem(kid.name);
+      const arr = stemMap.get(s) ?? [];
+      arr.push(kid);
+      stemMap.set(s, arr);
+    }
+    for (const [, group] of stemMap) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => {
+        const da = (a.name.match(/\./g) ?? []).length;
+        const db = (b.name.match(/\./g) ?? []).length;
+        if (da !== db) return da - db;
+        return a.name.localeCompare(b.name);
+      });
+      const primary = group[0];
+      for (const nested of group.slice(1)) {
+        primary.children.push(nested);
+        const idx = node.children.indexOf(nested);
+        if (idx !== -1) node.children.splice(idx, 1);
+      }
+    }
+  }
+}
+
+function buildTree(files: ProjectFile[], nestingEnabled = false): TreeNode[] {
+  const root: TreeNode[] = [];
+
+  function insert(nodes: TreeNode[], parts: string[], depth: number, file: ProjectFile) {
+    if (depth === parts.length - 1) {
+      nodes.push({ type: "file", name: parts[depth], fullPath: file.path, file, children: [] });
+      return;
+    }
+    const folderName = parts[depth];
+    const folderPath = parts.slice(0, depth + 1).join("/");
+    let folder = nodes.find((n) => n.type === "folder" && n.name === folderName);
+    if (!folder) {
+      folder = { type: "folder", name: folderName, fullPath: folderPath, children: [] };
+      nodes.push(folder);
+    }
+    insert(folder.children, parts, depth + 1, file);
+  }
+
+  function ensureFolders(nodes: TreeNode[], parts: string[], depth: number) {
+    if (depth >= parts.length) return;
+    const folderName = parts[depth];
+    const folderPath = parts.slice(0, depth + 1).join("/");
+    let folder = nodes.find((n) => n.type === "folder" && n.name === folderName);
+    if (!folder) {
+      folder = { type: "folder", name: folderName, fullPath: folderPath, children: [] };
+      nodes.push(folder);
+    }
+    ensureFolders(folder.children, parts, depth + 1);
+  }
+
+  for (const file of files) {
+    const parts = file.path.split("/");
+    if (parts[parts.length - 1] === ".gitkeep") {
+      // Represent an empty folder without showing the placeholder file
+      if (parts.length > 1) ensureFolders(root, parts.slice(0, -1), 0);
+      continue;
+    }
+    insert(root, parts, 0, file);
+  }
+
+  function sortNodes(nodes: TreeNode[]) {
+    nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of nodes) sortNodes(n.children);
+  }
+  sortNodes(root);
+  if (nestingEnabled) applyNesting(root);
+  return root;
+}
+
+function flattenVisible(nodes: TreeNode[], expandedFolders: Set<string>): TreeNode[] {
+  const result: TreeNode[] = [];
+  for (const node of nodes) {
+    result.push(node);
+    if (node.type === "folder" && expandedFolders.has(node.fullPath)) {
+      result.push(...flattenVisible(node.children, expandedFolders));
+    }
+    // File nesting: nested sibling files are always visible when their parent is
+    if (node.type === "file" && node.children.length > 0) {
+      result.push(...node.children);
+    }
+  }
+  return result;
+}
+
+interface ContextMenuState {
+  fileId: string;
+  filePath: string;
+  x: number;
+  y: number;
+}
+
+interface FolderContextMenuState {
+  folderPath: string;
+  x: number;
+  y: number;
+}
+
+interface FileTreeProps {
+  files: ProjectFile[];
+  activeFileId: string | null;
+  dirtyTabs: Set<string>;
+  renamingId: string | null;
+  renameVal: string;
+  renameInputRef: React.RefObject<HTMLInputElement>;
+  onOpenFile: (id: string) => void;
+  onStartRename: (id: string, path: string) => void;
+  onRenameChange: (val: string) => void;
+  onCommitRename: (id: string) => void;
+  onDeleteFile: (id: string, e: React.MouseEvent) => void;
+  onDuplicateFile?: (id: string) => void;
+  onCopyImport?: (filePath: string) => void;
+  defaultFolderPath?: string;
+  onFolderPathChange?: (path: string) => void;
+  onNewFileInFolder?: (folderPath: string) => void;
+  onNewFolderInFolder?: (parentPath: string) => void;
+  onRenameFolder?: (folderPath: string) => void;
+  onDeleteFolder?: (folderPath: string) => void;
+  onMoveFile?: (fileId: string, newPath: string) => void;
+  onMoveFolder?: (oldPath: string, newPath: string) => void;
+  expandedFolders: Set<string>;
+  onToggleFolder: (path: string) => void;
+  revealFileId?: string | null;
+  revealSeq?: number;
+  nestingEnabled?: boolean;
+}
+
+function TreeNodeRow({
+  node,
+  depth,
+  activeFileId,
+  dirtyTabs,
+  renamingId,
+  renameVal,
+  renameInputRef,
+  onOpenFile,
+  onStartRename,
+  onRenameChange,
+  onCommitRename,
+  onDeleteFile,
+  onNewFileInFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  expandedFolders,
+  onToggleFolder,
+  toggleFolder,
+  onContextMenu,
+  onFolderContextMenu,
+  focusedPath,
+  onFocus,
+  dragOverFolder,
+  onDragOverFolder,
+  onDropOnFolder,
+  isNestedChild,
+}: FileTreeProps & {
+  node: TreeNode;
+  depth: number;
+  expandedFolders: Set<string>;
+  toggleFolder: (path: string) => void;
+  onContextMenu: (e: React.MouseEvent, fileId: string, filePath: string) => void;
+  onFolderContextMenu: (e: React.MouseEvent, folderPath: string) => void;
+  focusedPath: string | null;
+  onFocus: (path: string) => void;
+  dragOverFolder: string | null;
+  onDragOverFolder: (path: string | null) => void;
+  onDropOnFolder: (folderPath: string, payload: DragPayload) => void;
+  isNestedChild?: boolean;
+}) {
+  const indent = depth * 12;
+
+  if (node.type === "folder") {
+    const open = expandedFolders.has(node.fullPath);
+    const isFocused = focusedPath === node.fullPath;
+    const isDragTarget = dragOverFolder === node.fullPath;
+    return (
+      <>
+        <button
+          data-path={node.fullPath}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: "folder", folderPath: node.fullPath }));
+          }}
+          onDragEnd={() => onDragOverFolder(null)}
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; onDragOverFolder(node.fullPath); }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) onDragOverFolder(null); }}
+          onDrop={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            onDragOverFolder(null);
+            const raw = e.dataTransfer.getData(DRAG_TYPE);
+            if (!raw) return;
+            try { onDropOnFolder(node.fullPath, JSON.parse(raw)); } catch {}
+          }}
+          onClick={() => { toggleFolder(node.fullPath); onFocus(node.fullPath); }}
+          onContextMenu={(e) => { e.preventDefault(); onFolderContextMenu(e, node.fullPath); }}
+          className={`w-full flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors ${isFocused ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""} ${isDragTarget ? "ring-1 ring-inset ring-blue-400 bg-blue-950/30" : ""}`}
+          style={{ paddingLeft: `${8 + indent}px` }}
+          tabIndex={-1}
+        >
+          <span className="text-gray-600 text-xs shrink-0">{open ? "▾" : "▸"}</span>
+          <span className="text-gray-500 shrink-0">📁</span>
+          <span className="truncate font-medium">{node.name}</span>
+        </button>
+        {open && node.children.map((child) => (
+          <TreeNodeRow
+            key={child.fullPath}
+            node={child}
+            depth={depth + 1}
+            files={[]}
+            activeFileId={activeFileId}
+            dirtyTabs={dirtyTabs}
+            renamingId={renamingId}
+            renameVal={renameVal}
+            renameInputRef={renameInputRef}
+            onOpenFile={onOpenFile}
+            onStartRename={onStartRename}
+            onRenameChange={onRenameChange}
+            onCommitRename={onCommitRename}
+            onDeleteFile={onDeleteFile}
+            onNewFileInFolder={onNewFileInFolder}
+            onRenameFolder={onRenameFolder}
+            onDeleteFolder={onDeleteFolder}
+            expandedFolders={expandedFolders}
+            onToggleFolder={onToggleFolder}
+            toggleFolder={toggleFolder}
+            onContextMenu={onContextMenu}
+            onFolderContextMenu={onFolderContextMenu}
+            focusedPath={focusedPath}
+            onFocus={onFocus}
+            dragOverFolder={dragOverFolder}
+            onDragOverFolder={onDragOverFolder}
+            onDropOnFolder={onDropOnFolder}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const file = node.file!;
+  const isActive = activeFileId === file.id;
+  const isDirty = dirtyTabs.has(file.id);
+  const isFocused = focusedPath === node.fullPath;
+
+  if (renamingId === file.id) {
+    return (
+      <form
+        className="px-2 py-0.5"
+        style={{ paddingLeft: `${8 + indent}px` }}
+        onSubmit={(e) => { e.preventDefault(); onCommitRename(file.id); }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          ref={renameInputRef}
+          value={renameVal}
+          onChange={(e) => onRenameChange(e.target.value)}
+          onBlur={() => onCommitRename(file.id)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { onCommitRename(file.id); e.stopPropagation(); }
+          }}
+          className="w-full px-1.5 py-0.5 text-xs bg-gray-800 border border-blue-500 rounded text-white focus:outline-none"
+        />
+      </form>
+    );
+  }
+
+  return (
+    <>
+    <div
+      data-path={node.fullPath}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ type: "file", fileId: file.id, filePath: file.path }));
+      }}
+      onDragEnd={() => onDragOverFolder(null)}
+      className={`group flex items-center ${isActive ? "bg-gray-700" : "hover:bg-gray-800"} ${isFocused && !isActive ? "ring-1 ring-inset ring-blue-500/60 bg-gray-800/60" : ""}`}
+      style={{ paddingLeft: `${8 + indent}px` }}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, file.id, file.path); }}
+    >
+      {isDirty && (
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0 mr-1" title="Unsaved" />
+      )}
+      <button
+        onClick={() => { onOpenFile(file.id); onFocus(node.fullPath); }}
+        onDoubleClick={() => onStartRename(file.id, file.path)}
+        className={`flex-1 text-left py-1.5 pr-2 text-xs truncate flex items-center gap-1 ${
+          isActive ? "text-white" : "text-gray-400 hover:text-white"
+        }`}
+        title={file.updatedAt ? `${file.path}\nModified ${timeAgo(file.updatedAt)}` : file.path}
+        tabIndex={-1}
+      >
+        {isNestedChild && <span className="text-gray-600 mr-0.5 shrink-0">↳</span>}
+        <FileIcon filename={node.name} />
+        <span className="truncate">{node.name}</span>
+      </button>
+      <button
+        onClick={(e) => onDeleteFile(file.id, e)}
+        className="px-2 py-1.5 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs shrink-0"
+        title="Delete file"
+        tabIndex={-1}
+      >
+        ×
+      </button>
+    </div>
+    {node.children.map((nested) => (
+      <TreeNodeRow
+        key={nested.fullPath}
+        node={nested}
+        depth={depth + 1}
+        isNestedChild
+        files={[]}
+        activeFileId={activeFileId}
+        dirtyTabs={dirtyTabs}
+        renamingId={renamingId}
+        renameVal={renameVal}
+        renameInputRef={renameInputRef}
+        onOpenFile={onOpenFile}
+        onStartRename={onStartRename}
+        onRenameChange={onRenameChange}
+        onCommitRename={onCommitRename}
+        onDeleteFile={onDeleteFile}
+        onNewFileInFolder={onNewFileInFolder}
+        onRenameFolder={onRenameFolder}
+        onDeleteFolder={onDeleteFolder}
+        expandedFolders={expandedFolders}
+        onToggleFolder={onToggleFolder}
+        toggleFolder={toggleFolder}
+        onContextMenu={onContextMenu}
+        onFolderContextMenu={onFolderContextMenu}
+        focusedPath={focusedPath}
+        onFocus={onFocus}
+        dragOverFolder={dragOverFolder}
+        onDragOverFolder={onDragOverFolder}
+        onDropOnFolder={onDropOnFolder}
+      />
+    ))}
+    </>
+  );
+}
+
+export default function FileTree(props: FileTreeProps) {
+  const { files, expandedFolders, onToggleFolder } = props;
+  const tree = buildTree(files, props.nestingEnabled);
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
+  const [copiedPath, setCopiedPath] = useState(false);
+  const [copiedImport, setCopiedImport] = useState(false);
+  const [copiedFolderPath, setCopiedFolderPath] = useState(false);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const folderMenuRef = useRef<HTMLDivElement>(null);
+  const treeContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleDropOnFolder = useCallback((folderPath: string, payload: DragPayload) => {
+    if (payload.type === "file") {
+      const filename = payload.filePath.split("/").pop()!;
+      const newPath = `${folderPath}/${filename}`;
+      if (newPath === payload.filePath) return;
+      props.onMoveFile?.(payload.fileId, newPath);
+    } else {
+      const folderName = payload.folderPath.split("/").pop()!;
+      if (folderPath === payload.folderPath) return;
+      if (folderPath.startsWith(payload.folderPath + "/")) return;
+      const newPath = `${folderPath}/${folderName}`;
+      props.onMoveFolder?.(payload.folderPath, newPath);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.onMoveFile, props.onMoveFolder]);
+
+  // Close context menus on outside click or Escape
+  useEffect(() => {
+    if (!contextMenu && !folderContextMenu) return;
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setContextMenu(null);
+      if (folderMenuRef.current && !folderMenuRef.current.contains(e.target as Node)) setFolderContextMenu(null);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { setContextMenu(null); setFolderContextMenu(null); }
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu, folderContextMenu]);
+
+  function toggleFolder(path: string) {
+    onToggleFolder(path);
+  }
+
+  const flat = useMemo(() => flattenVisible(tree, expandedFolders), [tree, expandedFolders]);
+
+  // Scroll focused node into view
+  useEffect(() => {
+    if (!focusedPath || !treeContainerRef.current) return;
+    const el = treeContainerRef.current.querySelector<HTMLElement>(`[data-path="${CSS.escape(focusedPath)}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [focusedPath]);
+
+  // Reveal active file: expand parent folders then scroll to file row
+  useEffect(() => {
+    if (!props.revealSeq || !props.revealFileId) return;
+    const file = files.find((f) => f.id === props.revealFileId);
+    if (!file) return;
+    const parts = file.path.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const folderPath = parts.slice(0, i).join("/");
+      if (!expandedFolders.has(folderPath)) onToggleFolder(folderPath);
+    }
+    const filePath = file.path;
+    setTimeout(() => {
+      if (!treeContainerRef.current) return;
+      const el = treeContainerRef.current.querySelector<HTMLElement>(`[data-path="${CSS.escape(filePath)}"]`);
+      if (el) { el.scrollIntoView({ block: "nearest" }); setFocusedPath(filePath); }
+    }, 60);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.revealSeq]);
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    const handled = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Delete", "Backspace", "Home", "End", "F2"];
+    if (!handled.includes(e.key)) return;
+    // Don't steal Home/End/Delete from rename inputs
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    e.preventDefault();
+
+    const idx = focusedPath ? flat.findIndex((n) => n.fullPath === focusedPath) : -1;
+    const node = flat[idx] ?? null;
+
+    switch (e.key) {
+      case "ArrowDown": {
+        const next = flat[idx + 1] ?? flat[0];
+        if (next) setFocusedPath(next.fullPath);
+        break;
+      }
+      case "ArrowUp": {
+        const prev = idx > 0 ? flat[idx - 1] : flat[flat.length - 1];
+        if (prev) setFocusedPath(prev.fullPath);
+        break;
+      }
+      case "Home": {
+        if (flat[0]) setFocusedPath(flat[0].fullPath);
+        break;
+      }
+      case "End": {
+        const last = flat[flat.length - 1];
+        if (last) setFocusedPath(last.fullPath);
+        break;
+      }
+      case "ArrowRight": {
+        if (!node) { if (flat[0]) setFocusedPath(flat[0].fullPath); break; }
+        if (node.type === "folder") {
+          if (!expandedFolders.has(node.fullPath)) {
+            toggleFolder(node.fullPath);
+          } else {
+            const child = flat[idx + 1];
+            if (child) setFocusedPath(child.fullPath);
+          }
+        }
+        break;
+      }
+      case "ArrowLeft": {
+        if (!node) break;
+        if (node.type === "folder" && expandedFolders.has(node.fullPath)) {
+          toggleFolder(node.fullPath);
+        } else {
+          const parentPath = node.fullPath.includes("/")
+            ? node.fullPath.substring(0, node.fullPath.lastIndexOf("/"))
+            : null;
+          if (parentPath) setFocusedPath(parentPath);
+        }
+        break;
+      }
+      case "Enter": {
+        if (!node) break;
+        if (node.type === "folder") toggleFolder(node.fullPath);
+        else if (node.file) props.onOpenFile(node.file.id);
+        break;
+      }
+      case "F2": {
+        if (!node || node.type !== "file" || !node.file) break;
+        props.onStartRename(node.file.id, node.file.path);
+        break;
+      }
+      case "Delete":
+      case "Backspace": {
+        if (!node || node.type !== "file" || !node.file) break;
+        props.onDeleteFile(node.file.id, { stopPropagation: () => {} } as React.MouseEvent);
+        break;
+      }
+    }
+  }
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, fileId: string, filePath: string) => {
+    setContextMenu({ fileId, filePath, x: e.clientX, y: e.clientY });
+    setFolderContextMenu(null);
+    setCopiedPath(false);
+  }, []);
+
+  const handleFolderContextMenu = useCallback((e: React.MouseEvent, folderPath: string) => {
+    setFolderContextMenu({ folderPath, x: e.clientX, y: e.clientY });
+    setContextMenu(null);
+    setCopiedFolderPath(false);
+  }, []);
+
+  if (files.length === 0) return null;
+
+  const ITEM = "w-full text-left px-3 py-1.5 text-xs hover:bg-gray-700 transition-colors";
+
+  return (
+    <div
+      ref={treeContainerRef}
+      className="flex-1 overflow-auto relative focus:outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onFocus={() => { if (!focusedPath && flat.length > 0) setFocusedPath(flat[0].fullPath); }}
+      aria-label="File tree"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const raw = e.dataTransfer.getData(DRAG_TYPE);
+        if (!raw) return;
+        // Only handle drops that hit the root container (not a folder button)
+        if ((e.target as Element).closest("button[data-path]") || (e.target as Element).closest("[data-path]")?.querySelector("button")) return;
+        try {
+          const payload: DragPayload = JSON.parse(raw);
+          if (payload.type === "file") {
+            const filename = payload.filePath.split("/").pop()!;
+            if (filename === payload.filePath) return; // already at root
+            props.onMoveFile?.(payload.fileId, filename);
+          } else {
+            const folderName = payload.folderPath.split("/").pop()!;
+            if (folderName === payload.folderPath) return;
+            props.onMoveFolder?.(payload.folderPath, folderName);
+          }
+        } catch {}
+        setDragOverFolder(null);
+      }}
+    >
+      {tree.map((node) => (
+        <TreeNodeRow
+          key={node.fullPath}
+          node={node}
+          depth={0}
+          {...props}
+          expandedFolders={expandedFolders}
+          toggleFolder={toggleFolder}
+          onContextMenu={handleContextMenu}
+          onFolderContextMenu={handleFolderContextMenu}
+          focusedPath={focusedPath}
+          onFocus={setFocusedPath}
+          dragOverFolder={dragOverFolder}
+          onDragOverFolder={setDragOverFolder}
+          onDropOnFolder={handleDropOnFolder}
+        />
+      ))}
+
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl py-1 w-44 text-gray-300"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className={ITEM}
+            onClick={() => { props.onOpenFile(contextMenu.fileId); setContextMenu(null); }}
+          >
+            Open
+          </button>
+          <button
+            className={ITEM}
+            onClick={() => {
+              props.onStartRename(contextMenu.fileId, contextMenu.filePath);
+              setContextMenu(null);
+            }}
+          >
+            Rename
+          </button>
+          <button
+            className={`${ITEM} ${copiedPath ? "text-green-400" : ""}`}
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.filePath).catch(() => {});
+              setCopiedPath(true);
+              setTimeout(() => { setCopiedPath(false); setContextMenu(null); }, 1200);
+            }}
+          >
+            {copiedPath ? "✓ Copied!" : "Copy Path"}
+          </button>
+          {props.onCopyImport && /\.[tj]sx?$/.test(contextMenu.filePath) && (
+            <button
+              className={`${ITEM} ${copiedImport ? "text-green-400" : ""}`}
+              onClick={() => {
+                props.onCopyImport!(contextMenu.filePath);
+                setCopiedImport(true);
+                setTimeout(() => { setCopiedImport(false); setContextMenu(null); }, 1200);
+              }}
+            >
+              {copiedImport ? "✓ Copied!" : "Copy as Import"}
+            </button>
+          )}
+          {props.onDuplicateFile && (
+            <button
+              className={ITEM}
+              onClick={() => { props.onDuplicateFile!(contextMenu.fileId); setContextMenu(null); }}
+            >
+              Duplicate
+            </button>
+          )}
+          <div className="border-t border-gray-700 my-1" />
+          <button
+            className={`${ITEM} text-red-400 hover:bg-red-900/30`}
+            onClick={(e) => { props.onDeleteFile(contextMenu.fileId, e); setContextMenu(null); }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+
+      {folderContextMenu && (
+        <div
+          ref={folderMenuRef}
+          className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl py-1 w-48 text-gray-300"
+          style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
+        >
+          {props.onNewFileInFolder && (
+            <button
+              className={ITEM}
+              onClick={() => {
+                props.onNewFileInFolder!(folderContextMenu.folderPath);
+                setFolderContextMenu(null);
+              }}
+            >
+              New File Here
+            </button>
+          )}
+          {props.onNewFolderInFolder && (
+            <button
+              className={ITEM}
+              onClick={() => {
+                props.onNewFolderInFolder!(folderContextMenu.folderPath);
+                setFolderContextMenu(null);
+              }}
+            >
+              New Folder Here
+            </button>
+          )}
+          {props.onRenameFolder && (
+            <button
+              className={ITEM}
+              onClick={() => {
+                props.onRenameFolder!(folderContextMenu.folderPath);
+                setFolderContextMenu(null);
+              }}
+            >
+              Rename Folder
+            </button>
+          )}
+          <button
+            className={`${ITEM} ${copiedFolderPath ? "text-green-400" : ""}`}
+            onClick={() => {
+              navigator.clipboard.writeText(folderContextMenu.folderPath).catch(() => {});
+              setCopiedFolderPath(true);
+              setTimeout(() => { setCopiedFolderPath(false); setFolderContextMenu(null); }, 1200);
+            }}
+          >
+            {copiedFolderPath ? "✓ Copied!" : "Copy Path"}
+          </button>
+          {props.onDeleteFolder && (
+            <>
+              <div className="border-t border-gray-700 my-1" />
+              <button
+                className={`${ITEM} text-red-400 hover:bg-red-900/30`}
+                onClick={() => {
+                  props.onDeleteFolder!(folderContextMenu.folderPath);
+                  setFolderContextMenu(null);
+                }}
+              >
+                Delete Folder
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

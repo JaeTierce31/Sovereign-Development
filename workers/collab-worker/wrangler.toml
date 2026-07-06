@@ -1,0 +1,12 @@
+name = "peregrine-collab"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = [ "nodejs_compat" ]
+
+[[durable_objects.bindings]]
+name = "PROJECTS"
+class_name = "ProjectDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ProjectDO"]

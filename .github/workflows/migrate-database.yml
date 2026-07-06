@@ -1,0 +1,20 @@
+name: Database Migrations
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'drizzle/**'
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Run Migration
+        run: npx drizzle-kit migrate
+        env:
+          TURSO_DB_URL: ${{ secrets.TURSO_DB_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
