@@ -8,23 +8,24 @@
 
 ## What this repository is
 
-Sovereign-Development is the consolidation target and permanent home for
-**Peregrine**, the mobile-first, edge-native collaborative cloud IDE — and, by role,
-the **IDE developer platform for Sovereign Dominion** and the wider ecosystem: the
-tooling the ecosystem is built *with*.
+Sovereign-Development is the permanent home of **Peregrine**, the mobile-first,
+edge-native collaborative cloud IDE — and, by role, the **IDE developer platform for
+Sovereign Dominion** and the wider ecosystem: the tooling the ecosystem is built *with*.
 
-It consolidates two existing repositories (decision **D2** of the ecosystem review):
+It consolidates two repositories (decision **D2** of the ecosystem review):
 
-| Source repo | What it contributes | How |
+| Source repo | What it contributed | How |
 |---|---|---|
-| [`Peregrine.ai`](https://github.com/JaeTierce31/Peregrine.ai) | The working Peregrine IDE — Next.js 14 App Router PWA (Monaco + xterm.js, yjs CRDT collaboration via a Cloudflare Worker, Clerk v7 auth, Drizzle ORM, Stripe billing, Vercel deployment) and its full commit history | History-preserving import — see [`docs/MIGRATION.md`](docs/MIGRATION.md) |
-| [`Peregrine.dev`](https://github.com/JaeTierce31/Peregrine.dev) | Nothing but the name (it is an empty scaffold reserving the `peregrine.dev` domain identity; the domain itself points at the Peregrine deployment) | Superseded notice + archive; no code to import |
+| [`Peregrine.ai`](https://github.com/JaeTierce31/Peregrine.ai) | The working Peregrine IDE — Next.js 14 App Router PWA (Monaco + xterm.js, yjs CRDT collaboration via a Cloudflare Worker, Clerk v7 auth, Drizzle ORM, Stripe billing, Vercel deployment) — with its full commit history | History-preserving merge (this repo's history contains Peregrine.ai's); runbook: [`docs/MIGRATION.md`](docs/MIGRATION.md) |
+| [`Peregrine.dev`](https://github.com/JaeTierce31/Peregrine.dev) | Nothing but the name (an empty scaffold reserving the `peregrine.dev` domain identity) | Superseded notice; archive |
 
-**Status: charter only.** This repository currently contains this charter and the
-migration runbook — the code import is deliberately a separate, reviewed cutover
-(moving a deployed product also moves its Vercel/Clerk/Stripe/Cloudflare wiring), not
-a side effect of the review that created this document. Until the import lands,
-Peregrine's source of truth remains `Peregrine.ai`.
+**Status: code imported; deployment cutover pending.** The Peregrine source and its
+history now live here. The deployed Vercel project still builds from `Peregrine.ai`
+until the cutover in `docs/MIGRATION.md` §3 is executed — until then, treat
+`Peregrine.ai` as frozen except for that cutover, and land new work here.
+
+**Product documentation:** [`docs/PEREGRINE.md`](docs/PEREGRINE.md) (the product
+README) and [`CLAUDE.md`](CLAUDE.md) (agent/development context).
 
 ## Place in the ecosystem
 
@@ -64,14 +65,15 @@ ecosystem is already one too many (its ADR-004 says as much).
 |---|---|
 | **Sovereign-Dominion** | Ecosystem anchor: `@sovereign/kernel` + Constitution · AEC and Visual domains · reference demo. |
 | **Sovereign-Dignity** | Flagship domain: HUD NSPIRE housing inspection (continuation of `hmis-platform`). |
-| **Peregrine.ai / Peregrine.dev** | Sources being consolidated here; archived after cutover. |
+| **Peregrine.ai / Peregrine.dev** | Consolidated here; to be archived after the deployment cutover. |
 
 ## Next steps (in order)
 
-1. Rotate the Supabase key currently committed in `Peregrine.ai`'s `CLAUDE.md`
-   (ecosystem review finding 4.4-1) — nothing secret is to be imported here.
-2. Execute the import per [`docs/MIGRATION.md`](docs/MIGRATION.md).
-3. Re-point deployment (Vercel project / domains / worker) at this repo; verify.
-4. Archive `Peregrine.ai` and `Peregrine.dev` with pointers here.
-5. When `@sovereign/kernel` publishes, open the Development-domain integration as its
+1. **Rotate the Supabase anon key** that was committed in `Peregrine.ai`'s history
+   (ecosystem review finding 4.4-1). The key was **not** imported into this repo's
+   docs, but it remains in the source repo's git history — rotation is the only fix.
+2. Re-point deployment (Vercel project / domains / worker) at this repo per
+   [`docs/MIGRATION.md`](docs/MIGRATION.md) §3; verify auth, billing, and collab.
+3. Archive `Peregrine.ai` and `Peregrine.dev` with pointers here (§4).
+4. When `@sovereign/kernel` publishes, open the Development-domain integration as its
    own charter + implementation work.

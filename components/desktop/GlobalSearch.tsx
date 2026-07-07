@@ -1,0 +1,472 @@
+"use client";
+import { useEffect, useRef, useState, useCallback } from "react";
+import type { SearchResult } from "@/app/api/projects/[id]/search/route";
+import FileIcon from "./FileIcon";
+
+interface GroupedResults {
+  path: string;
+  fileId: string;
+  matches: SearchResult[];
+}
+
+interface ProjectFile {
+  id: string;
+  path: string;
+  content: string | null;
+  language: string | null;
+}
+
+export default function GlobalSearch({
+  projectId,
+  files,
+  onSelect,
+  onClose,
+  onFileSave,
+  inline = false,
+}: {
+  projectId: string;
+  files: ProjectFile[];
+  onSelect: (fileId: string, line: number, col?: number, colEnd?: number) => void;
+  onClose: () => void;
+  onFileSave?: (fileId: string, content: string) => void;
+  inline?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [replaceText, setReplaceText] = useState("");
+  const [showReplace, setShowReplace] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [includeFilter, setIncludeFilter] = useState("");
+  const [excludeFilter, setExcludeFilter] = useState("");
+  const [regexError, setRegexError] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const [replacedCount, setReplacedCount] = useState<number | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (showReplace) setTimeout(() => replaceRef.current?.focus(), 0);
+  }, [showReplace]);
+
+  const minLen = useRegex ? 1 : 2;
+
+  const search = useCallback(
+    (q: string, regex: boolean, cs: boolean, word: boolean, include: string, exclude: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      setReplacedCount(null);
+      setRegexError(false);
+      if (!q.trim() || q.length < (regex ? 1 : 2)) { setResults([]); return; }
+
+      debounceRef.current = setTimeout(async () => {
+        setLoading(true);
+        try {
+          const params = new URLSearchParams({ q });
+          if (regex) params.set("regex", "1");
+          if (cs) params.set("cs", "1");
+          if (word) params.set("word", "1");
+          if (include.trim()) params.set("include", include.trim());
+          if (exclude.trim()) params.set("exclude", exclude.trim());
+          const res = await fetch(`/api/projects/${projectId}/search?${params}`);
+          if (res.ok) {
+            const data = await res.json();
+            setResults(data.results ?? []);
+          } else if (res.status === 400) {
+            setRegexError(true);
+            setResults([]);
+          }
+        } finally {
+          setLoading(false);
+        }
+      }, 200);
+    },
+    [projectId]
+  );
+
+  useEffect(() => {
+    search(query, useRegex, caseSensitive, wholeWord, includeFilter, excludeFilter);
+  }, [query, useRegex, caseSensitive, wholeWord, includeFilter, excludeFilter, search]);
+
+  const grouped: GroupedResults[] = [];
+  for (const r of results) {
+    const existing = grouped.find((g) => g.fileId === r.fileId);
+    if (existing) {
+      existing.matches.push(r);
+    } else {
+      grouped.push({ path: r.path, fileId: r.fileId, matches: [r] });
+    }
+  }
+
+  function highlight(line: string, start: number, end: number) {
+    return (
+      <>
+        <span className="text-gray-500">{line.slice(0, start)}</span>
+        <span className="text-yellow-300 font-medium">{line.slice(start, end)}</span>
+        <span className="text-gray-500">{line.slice(end)}</span>
+      </>
+    );
+  }
+
+  function buildReplaceRegex(q: string): RegExp {
+    let pattern = useRegex ? q : q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (wholeWord) pattern = `\\b${pattern}\\b`;
+    return new RegExp(pattern, caseSensitive ? "g" : "gi");
+  }
+
+  async function replaceInFile(fileId: string, replacement: string): Promise<number> {
+    const file = files.find((f) => f.id === fileId);
+    if (!file || !file.content) return 0;
+    let regex: RegExp;
+    try { regex = buildReplaceRegex(query); } catch { return 0; }
+    const count = (file.content.match(regex) ?? []).length;
+    if (count === 0) return 0;
+    const newContent = file.content.replace(regex, replacement);
+    await fetch(`/api/projects/${projectId}/files/${fileId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: newContent }),
+    });
+    onFileSave?.(fileId, newContent);
+    return count;
+  }
+
+  async function handleReplaceAllInFile(fileId: string) {
+    if (!query || replaceText === "") return;
+    setReplacing(true);
+    try {
+      const n = await replaceInFile(fileId, replaceText);
+      setReplacedCount((prev) => (prev ?? 0) + n);
+      setResults((prev) => prev.filter((r) => r.fileId !== fileId));
+    } finally {
+      setReplacing(false);
+    }
+  }
+
+  async function handleReplaceAll() {
+    if (!query || replaceText === "") return;
+    setReplacing(true);
+    let total = 0;
+    try {
+      const fileIds = [...new Set(results.map((r) => r.fileId))];
+      for (const fid of fileIds) {
+        total += await replaceInFile(fid, replaceText);
+      }
+      setReplacedCount(total);
+      setResults([]);
+    } finally {
+      setReplacing(false);
+    }
+  }
+
+  const ToggleBtn = ({ active, onClick, title, children }: { active: boolean; onClick: () => void; title: string; children: React.ReactNode }) => (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`px-1.5 py-0.5 text-xs rounded font-mono transition-colors shrink-0 ${active ? "bg-blue-600/40 text-blue-300 border border-blue-600/50" : "text-gray-600 hover:text-gray-300 border border-transparent"}`}
+    >
+      {children}
+    </button>
+  );
+
+  if (inline) {
+    return (
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Search row */}
+        <div className={`flex items-center gap-1.5 px-3 py-2 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
+          <svg className="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={useRegex ? "Regex search…" : "Search files…"}
+            className="flex-1 bg-transparent text-white text-xs placeholder-gray-500 focus:outline-none min-w-0"
+            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+          />
+          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Match case">Aa</ToggleBtn>
+          <ToggleBtn active={wholeWord} onClick={() => setWholeWord((v) => !v)} title="Match whole word">W</ToggleBtn>
+          <ToggleBtn active={useRegex} onClick={() => setUseRegex((v) => !v)} title="Use regex">.*</ToggleBtn>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            title="Filter files"
+            className={`px-1 py-0.5 text-xs rounded transition-colors shrink-0 ${showFilters ? "text-blue-400" : "text-gray-600 hover:text-gray-300"}`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M3 4h18M7 12h10M11 20h2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* File filters */}
+        {showFilters && (
+          <div className="px-3 py-1.5 border-b border-gray-700 shrink-0 flex flex-col gap-1">
+            <input
+              value={includeFilter}
+              onChange={(e) => setIncludeFilter(e.target.value)}
+              placeholder="Files to include (e.g. *.ts,src/*)"
+              className="w-full bg-transparent text-white text-[10px] placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+            />
+            <input
+              value={excludeFilter}
+              onChange={(e) => setExcludeFilter(e.target.value)}
+              placeholder="Files to exclude (e.g. *.test.ts,dist/*)"
+              className="w-full bg-transparent text-white text-[10px] placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+            />
+          </div>
+        )}
+
+        {/* Replace row */}
+        <div className={`flex items-center gap-2 px-3 py-1.5 border-b ${regexError ? "border-red-800" : "border-gray-700"} shrink-0`}>
+          <svg className="w-3.5 h-3.5 text-gray-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+          <input
+            ref={replaceRef}
+            value={replaceText}
+            onChange={(e) => setReplaceText(e.target.value)}
+            placeholder="Replace…"
+            className="flex-1 bg-transparent text-white text-xs placeholder-gray-500 focus:outline-none min-w-0"
+            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+          />
+          {grouped.length > 0 && replaceText !== "" && (
+            <button
+              onClick={handleReplaceAll}
+              disabled={replacing || !query}
+              className="px-1.5 py-0.5 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded transition-colors shrink-0"
+            >
+              {replacing ? "…" : "All"}
+            </button>
+          )}
+        </div>
+        {/* Status row */}
+        <div className="px-3 py-1 shrink-0 flex items-center gap-2 min-h-[20px]">
+          {loading && <span className="text-gray-600 text-[10px]">Searching…</span>}
+          {regexError && <span className="text-red-500 text-[10px]">Bad regex</span>}
+          {!loading && !regexError && query.length >= minLen && replacedCount === null && (
+            <span className="text-gray-600 text-[10px]">{results.length} match{results.length !== 1 ? "es" : ""}</span>
+          )}
+          {replacedCount !== null && (
+            <span className="text-green-500 text-[10px]">{replacedCount} replaced</span>
+          )}
+        </div>
+        {/* Results */}
+        <div className="flex-1 overflow-auto">
+          {grouped.length === 0 && query.length >= minLen && !loading && !regexError && replacedCount === null && (
+            <div className="px-3 py-4 text-center text-gray-600 text-xs">No matches</div>
+          )}
+          {grouped.length === 0 && query.length < minLen && !regexError && (
+            <div className="px-3 py-6 text-center text-gray-600 text-xs">
+              {useRegex ? "Type a pattern…" : "Type 2+ chars to search"}
+            </div>
+          )}
+          {grouped.map((group) => {
+            const filename = group.path.split("/").pop() ?? group.path;
+            const dir = group.path.includes("/") ? group.path.substring(0, group.path.lastIndexOf("/")) : "";
+            return (
+              <div key={group.fileId} className="border-b border-gray-800/60 last:border-0">
+                <div className="flex items-center justify-between px-3 py-1 bg-gray-800/40 sticky top-0 gap-1 min-w-0">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <FileIcon filename={filename} />
+                    <span className="text-[10px] font-medium text-gray-200 truncate">{filename}</span>
+                    {dir && <span className="text-[10px] text-gray-600 truncate shrink-0">{dir}</span>}
+                  </div>
+                  {replaceText !== "" && (
+                    <button
+                      onClick={() => handleReplaceAllInFile(group.fileId)}
+                      disabled={replacing || !query}
+                      className="text-[10px] text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-1"
+                    >
+                      Replace ({group.matches.length})
+                    </button>
+                  )}
+                </div>
+                {group.matches.map((match, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1)}
+                    className="w-full text-left px-3 py-1.5 hover:bg-gray-800 transition-colors"
+                  >
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-gray-600 text-[10px] w-6 shrink-0 text-right tabular-nums">{match.lineNumber}</span>
+                      <span className="text-[10px] font-mono truncate">
+                        {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/60" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Search row */}
+        <div className={`flex items-center gap-2 px-4 py-3 border-b ${regexError ? "border-red-800" : "border-gray-700"}`}>
+          <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={useRegex ? "Search with regex…" : "Search across all files…"}
+            className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none min-w-0"
+            onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+          />
+          <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} title="Match case">Aa</ToggleBtn>
+          <ToggleBtn active={wholeWord} onClick={() => setWholeWord((v) => !v)} title="Match whole word">W</ToggleBtn>
+          <ToggleBtn active={useRegex} onClick={() => setUseRegex((v) => !v)} title="Use regex">.*</ToggleBtn>
+          <button
+            onClick={() => setShowFilters((v) => !v)}
+            title="Filter files"
+            className={`px-1.5 py-0.5 text-xs rounded transition-colors shrink-0 ${showFilters ? "bg-blue-600/30 text-blue-300 border border-blue-600/50" : "text-gray-600 hover:text-gray-300 border border-transparent"}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M3 4h18M7 12h10M11 20h2" strokeLinecap="round" />
+            </svg>
+          </button>
+          {loading && <span className="text-gray-600 text-xs shrink-0">Searching…</span>}
+          {regexError && <span className="text-red-500 text-xs shrink-0">Bad regex</span>}
+          {!loading && !regexError && query.length >= minLen && replacedCount === null && (
+            <span className="text-gray-600 text-xs shrink-0">{results.length} match{results.length !== 1 ? "es" : ""}</span>
+          )}
+          {replacedCount !== null && (
+            <span className="text-green-500 text-xs shrink-0">{replacedCount} replaced</span>
+          )}
+          <button
+            onClick={() => setShowReplace((v) => !v)}
+            className={`text-xs px-2 py-0.5 rounded transition-colors shrink-0 ${showReplace ? "bg-blue-600/30 text-blue-300" : "text-gray-500 hover:text-gray-300"}`}
+            title="Toggle replace"
+          >
+            Replace
+          </button>
+        </div>
+
+        {/* File filters */}
+        {showFilters && (
+          <div className="px-4 py-2.5 border-b border-gray-700 bg-gray-800/30 flex gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-gray-500 mb-1">Files to include</div>
+              <input
+                value={includeFilter}
+                onChange={(e) => setIncludeFilter(e.target.value)}
+                placeholder="e.g. *.ts, src/**"
+                className="w-full bg-gray-800 text-white text-xs placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-gray-500 mb-1">Files to exclude</div>
+              <input
+                value={excludeFilter}
+                onChange={(e) => setExcludeFilter(e.target.value)}
+                placeholder="e.g. *.test.ts, dist/**"
+                className="w-full bg-gray-800 text-white text-xs placeholder-gray-600 focus:outline-none border border-gray-700 rounded px-2 py-1 focus:border-gray-500"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Replace row */}
+        {showReplace && (
+          <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-700 bg-gray-800/50">
+            <svg className="w-4 h-4 text-gray-600 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+            <input
+              ref={replaceRef}
+              value={replaceText}
+              onChange={(e) => setReplaceText(e.target.value)}
+              placeholder={useRegex ? "Replace (supports $1 capture groups)…" : "Replace with…"}
+              className="flex-1 bg-transparent text-white text-sm placeholder-gray-500 focus:outline-none"
+              onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
+            />
+            {grouped.length > 0 && (
+              <button
+                onClick={handleReplaceAll}
+                disabled={replacing || !query}
+                className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded transition-colors shrink-0"
+              >
+                {replacing ? "…" : `Replace all (${results.length})`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Results */}
+        <div className="max-h-96 overflow-auto">
+          {grouped.length === 0 && query.length >= minLen && !loading && !regexError && replacedCount === null && (
+            <div className="px-4 py-8 text-center text-gray-600 text-sm">No matches found</div>
+          )}
+          {grouped.length === 0 && query.length >= minLen && !loading && replacedCount !== null && (
+            <div className="px-4 py-8 text-center text-green-600 text-sm">
+              Replaced {replacedCount} occurrence{replacedCount !== 1 ? "s" : ""}
+            </div>
+          )}
+          {grouped.length === 0 && query.length < minLen && !regexError && (
+            <div className="px-4 py-8 text-center text-gray-600 text-sm">
+              {useRegex ? "Type a regex pattern to search" : "Type at least 2 characters to search"}
+            </div>
+          )}
+          {regexError && (
+            <div className="px-4 py-8 text-center text-red-600 text-sm">Invalid regular expression</div>
+          )}
+          {grouped.map((group) => {
+            const filename = group.path.split("/").pop() ?? group.path;
+            const dir = group.path.includes("/") ? group.path.substring(0, group.path.lastIndexOf("/")) : "";
+            return (
+              <div key={group.fileId} className="border-b border-gray-800 last:border-0">
+                <div className="flex items-center justify-between px-4 py-1.5 bg-gray-800/50 sticky top-0 gap-2 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <FileIcon filename={filename} />
+                    <span className="text-xs font-medium text-gray-200 shrink-0">{filename}</span>
+                    {dir && <span className="text-xs text-gray-500 truncate">{dir}</span>}
+                  </div>
+                  {showReplace && (
+                    <button
+                      onClick={() => handleReplaceAllInFile(group.fileId)}
+                      disabled={replacing || !query}
+                      className="text-xs text-gray-500 hover:text-gray-200 disabled:opacity-40 transition-colors shrink-0 ml-2"
+                    >
+                      Replace in file ({group.matches.length})
+                    </button>
+                  )}
+                </div>
+                {group.matches.map((match, i) => (
+                  <button
+                    key={i}
+                    onClick={() => { onSelect(match.fileId, match.lineNumber, match.matchStart + 1, match.matchEnd + 1); onClose(); }}
+                    className="w-full text-left px-4 py-2 hover:bg-gray-800 transition-colors"
+                  >
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-gray-600 text-xs w-8 shrink-0 text-right tabular-nums">{match.lineNumber}</span>
+                      <span className="text-xs font-mono truncate">
+                        {highlight(match.lineText.trimStart(), Math.max(0, match.matchStart - (match.lineText.length - match.lineText.trimStart().length)), match.matchEnd - (match.lineText.length - match.lineText.trimStart().length))}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
